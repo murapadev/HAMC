@@ -1,0 +1,6 @@
+numpy>=1.20.0
+pillow>=8.0.0
+typing-extensions>=4.0.0
+python-logging-loki>=0.3.1  # For advanced logging capabilities
+pytest>=7.0.0  # For testing
+pytest-cov>=2.0.0  # For test coverage reporting
