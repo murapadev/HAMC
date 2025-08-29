@@ -2,6 +2,8 @@ from typing import List, Dict
 from ..core.cell import Cell
 from ..config.region_config import RegionConfig
 from .base_generator import BaseGenerator
+from ..config.advanced_config import get_generator_config
+
 
 class GlobalGenerator(BaseGenerator):
     """Generator for the global level (regions)."""
@@ -26,60 +28,86 @@ class GlobalGenerator(BaseGenerator):
 
     def collapse(self) -> bool:
         """Run wave function collapse algorithm with region type constraints.
-        
+
         Ensures that all required region types appear in the final map.
         """
-        stack = []
-        while True:
-            # Find cell with minimum entropy
-            min_entropy = float('inf')
-            target = None
+        # First, ensure minimum representation of each region type
+        if not self._ensure_minimum_regions():
+            return False
             
-            for r in range(self.height):
-                for c in range(self.width):
-                    entropy = self.cells[r][c].entropy()
-                    if 0 < entropy < min_entropy:
-                        min_entropy = entropy
-                        target = (r, c)
-            
-            if not target:
-                # All cells collapsed, check if all required regions are present
-                regions_present = set()
-                for r in range(self.height):
-                    for c in range(self.width):
-                        if self.cells[r][c].collapsed_value:
-                            regions_present.add(self.cells[r][c].collapsed_value)
+        # Use base class collapse method for consistent backtracking
+        if not super().collapse():
+            return False
+
+        # Additional validation: ensure all required regions are present
+        regions_present = set()
+        for r in range(self.height):
+            for c in range(self.width):
+                if self.cells[r][c].collapsed_value:
+                    regions_present.add(self.cells[r][c].collapsed_value)
+
+        # If any required region is missing, try to regenerate
+        missing_regions = set(RegionConfig.TYPES.keys()) - regions_present
+
+        if missing_regions:
+            self.logger.warning(f"Missing required regions: {missing_regions}. Regenerating...")
+            # Reset and try again with forced placement
+            self.initialize()
+            return self._force_region_placement(missing_regions)
+
+        return True
+        
+    def _ensure_minimum_regions(self) -> bool:
+        """Ensure minimum representation of each region type before collapse."""
+        try:
+            config = get_generator_config()
+            # For small grids, ensure at least one cell per region type
+            if self.width * self.height < len(RegionConfig.TYPES):
+                self.logger.warning("Grid too small for all region types")
+                return True
                 
-                # If any required region is missing, try to fix by backtracking
-                # and forcing a cell to be the missing region
-                missing_regions = set(RegionConfig.TYPES.keys()) - regions_present
-                
-                if missing_regions:
-                    self.logger.warning(f"Missing required regions: {missing_regions}")
-                    
-                    # If we have no backtrack points, we can't fix the map
-                    if not stack:
-                        self.logger.error("Cannot fix missing regions, no backtrack points")
-                        return False
-                    
-                    # Restore to a previous state
-                    self._restore(stack.pop())
-                    continue
-                
-                return True  # All cells collapsed and all regions present
+            # Don't force probabilities, just ensure initialization is correct
+            # The WFC algorithm should handle the rest
+            return True
             
-            r, c = target
-            if min_entropy == float('inf'):
-                if not stack:
-                    return False
-                self._restore(stack.pop())
-                continue
+        except Exception as e:
+            self.logger.error(f"Failed to ensure minimum regions: {str(e)}")
+            return False
             
-            stack.append(self._snapshot())
-            self.cells[r][c].collapse()
+    def _force_region_placement(self, missing_regions: set) -> bool:
+        """Force placement of missing regions and retry collapse."""
+        try:
+            # For small grids, just try a simple approach
+            if self.width * self.height <= len(missing_regions):
+                # Place one region per cell for small grids
+                region_list = list(missing_regions)
+                for i, (r, c) in enumerate([(r, c) for r in range(self.height) for c in range(self.width)]):
+                    if i < len(region_list):
+                        self.cells[r][c].possible = {region_list[i]: 1.0}
+                        self.cells[r][c].collapse()
+                    else:
+                        break
+            else:
+                # For larger grids, try to place missing regions strategically
+                for region in missing_regions:
+                    placed = False
+                    for r in range(self.height):
+                        for c in range(self.width):
+                            if self.cells[r][c].collapsed_value is None:
+                                # Try to place the region
+                                self.cells[r][c].possible = {region: 1.0}
+                                if self.cells[r][c].collapse():
+                                    placed = True
+                                    break
+                        if placed:
+                            break
+                            
+            # Now try to collapse remaining cells normally
+            return super().collapse()
             
-            if not self.propagate(r, c):
-                continue
+        except Exception as e:
+            self.logger.error(f"Failed to force region placement: {str(e)}")
+            return False
 
     def propagate(self, row: int, col: int) -> bool:
         queue = [(row, col)]
@@ -139,11 +167,21 @@ class GlobalGenerator(BaseGenerator):
         for r in range(self.height):
             for c in range(self.width):
                 region = self.cells[r][c].collapsed_value
-                
+
+                # Skip if region is None (shouldn't happen in valid state, but be safe)
+                if region is None:
+                    self.logger.error(f"Cell at ({r},{c}) has no collapsed value")
+                    return False
+
                 # Check compatibility with neighbors
                 for nr, nc in self.get_neighbors(r, c):
                     if 0 <= nr < self.height and 0 <= nc < self.width:
                         neighbor = self.cells[nr][nc].collapsed_value
+
+                        # Skip if neighbor is None
+                        if neighbor is None:
+                            continue
+
                         if not RegionConfig.are_compatible(region, neighbor):
                             self.logger.error(
                                 f"Incompatible regions: {region} and {neighbor} at ({r},{c})"

@@ -9,9 +9,9 @@ class GeneratorConfig(NamedTuple):
     max_local_size: int = 6
     
     region_distribution: dict = {
-        "bosque": (0.3, 0.5),    # min, max percentage
-        "desierto": (0.2, 0.4),
-        "ciudad": (0.2, 0.4)
+        "forest": (0.3, 0.5),    # min, max percentage
+        "desert": (0.2, 0.4),
+        "city": (0.2, 0.4)
     }
     
     backtrack_limit: int = 100

@@ -5,54 +5,54 @@ class BlockConfig:
     
     # Region to block mappings
     REGION_TO_BLOCKS: Dict[str, List[Tuple[str, float]]] = {
-        "bosque": [
-            ("arboleda", 0.6),
-            ("claro", 0.3),
-            ("rio", 0.1)
+        "forest": [
+            ("grove", 0.6),
+            ("clearing", 0.3),
+            ("river", 0.1)
         ],
-        "desierto": [
-            ("arena", 0.7),
+        "desert": [
+            ("sand", 0.7),
             ("oasis", 0.2),
-            ("rio", 0.1)
+            ("river", 0.1)
         ],
-        "ciudad": [
-            ("residencial", 0.4),
-            ("comercial", 0.3),
+        "city": [
+            ("residential", 0.4),
+            ("commercial", 0.3),
             ("industrial", 0.2),
-            ("carretera", 0.1)
+            ("road", 0.1)
         ]
     }
 
     # Transition blocks between regions
     TRANSITIONS: Dict[str, Dict[str, Tuple[str, float]]] = {
-        "bosque": {
-            "desierto": ("matorral", 0.8),
-            "ciudad": ("periurbano", 0.8)
+        "forest": {
+            "desert": ("scrubland", 0.8),
+            "city": ("periurban", 0.8)
         },
-        "desierto": {
-            "bosque": ("matorral", 0.8),
-            "ciudad": ("aldea", 0.8)
+        "desert": {
+            "forest": ("scrubland", 0.8),
+            "city": ("village", 0.8)
         },
-        "ciudad": {
-            "bosque": ("periurbano", 0.8),
-            "desierto": ("aldea", 0.8)
+        "city": {
+            "forest": ("periurban", 0.8),
+            "desert": ("village", 0.8)
         }
     }
 
     # Block compatibility rules
     COMPATIBILITY: Dict[str, Set[str]] = {
-        "arboleda": {"arboleda", "claro", "rio", "matorral", "periurbano"},
-        "claro": {"arboleda", "claro", "rio", "matorral", "periurbano"},  # Added periurbano
-        "rio": {"arboleda", "claro", "arena", "oasis", "rio", "periurbano"},  # Added periurbano
-        "arena": {"arena", "oasis", "rio", "matorral", "aldea"},
-        "oasis": {"arena", "rio", "matorral"},
-        "residencial": {"residencial", "comercial", "carretera", "periurbano"},
-        "comercial": {"residencial", "comercial", "industrial", "carretera", "periurbano"},
-        "industrial": {"comercial", "industrial", "carretera", "periurbano"},
-        "carretera": {"residencial", "comercial", "industrial", "periurbano", "aldea"},
-        "matorral": {"arboleda", "claro", "arena", "oasis", "periurbano", "matorral"},  # Added matorral
-        "periurbano": {"arboleda", "residencial", "comercial", "industrial", "carretera", "matorral", "claro", "periurbano", "rio"},  # Added rio
-        "aldea": {"arena", "carretera"}
+        "grove": {"grove", "clearing", "river", "scrubland", "periurban"},
+        "clearing": {"grove", "clearing", "river", "scrubland", "periurban"},  # Added periurban
+        "river": {"grove", "clearing", "sand", "oasis", "river", "periurban"},  # Added periurban
+        "sand": {"sand", "oasis", "river", "scrubland", "village"},
+        "oasis": {"sand", "river", "scrubland"},
+        "residential": {"residential", "commercial", "road", "periurban"},
+        "commercial": {"residential", "commercial", "industrial", "road", "periurban"},
+        "industrial": {"commercial", "industrial", "road", "periurban"},
+        "road": {"residential", "commercial", "industrial", "periurban", "village"},
+        "scrubland": {"grove", "clearing", "sand", "oasis", "periurban", "scrubland"},  # Added scrubland
+        "periurban": {"grove", "residential", "commercial", "industrial", "road", "scrubland", "clearing", "periurban", "river"},  # Added river
+        "village": {"sand", "road"}
     }
 
     @classmethod

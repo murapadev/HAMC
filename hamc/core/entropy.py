@@ -4,23 +4,26 @@ import numpy as np
 from numpy.typing import NDArray
 from functools import lru_cache
 import time
+from ..config.advanced_config import get_entropy_config
+
 
 class AdaptiveEntropyCalculator:
     """Advanced entropy calculation with spatial context awareness and learning capabilities."""
     
-    def __init__(self, temperature: float = 1.0, learning_rate: float = 0.01):
+    def __init__(self, temperature: Optional[float] = None, learning_rate: Optional[float] = None):
         """Initialize the adaptive entropy calculator.
         
         Args:
             temperature: Temperature parameter for softmax normalization
             learning_rate: Rate at which the system adapts to successful patterns
         """
-        self.temperature = temperature
-        self.learning_rate = learning_rate
+        config = get_entropy_config()
+        self.temperature = temperature if temperature is not None else config.default_temperature
+        self.learning_rate = learning_rate if learning_rate is not None else config.default_learning_rate
         self.pattern_weights: Dict[str, float] = {}
         self.context_cache = {}
         self.successful_patterns: List[Dict[str, Any]] = []
-        self.temporal_decay_factor = 0.95  # Decay factor for older patterns
+        self.temporal_decay_factor = config.temporal_decay_factor  # Decay factor for older patterns
         self.last_update_time = time.time()
         
     def calculate_entropy(self, 
@@ -111,13 +114,14 @@ class AdaptiveEntropyCalculator:
             pattern: Dictionary describing the successful pattern
             success_score: A score indicating how successful the pattern was
         """
+        config = get_entropy_config()
         self.successful_patterns.append(pattern)
         
         # Apply temporal decay to existing patterns
         current_time = time.time()
         time_since_update = current_time - self.last_update_time
         if time_since_update > 1.0:  # Only decay after significant time
-            decay_factor = self.temporal_decay_factor ** (time_since_update / 10.0)
+            decay_factor = self.temporal_decay_factor ** (time_since_update / config.temporal_decay_interval)
             self.pattern_weights = {k: v * decay_factor for k, v in self.pattern_weights.items()}
             self.last_update_time = current_time
         
@@ -146,7 +150,7 @@ class AdaptiveEntropyCalculator:
                     if neighbor:
                         neighbor_key = f"{neighbor}_{direction}_to_{value}"
                         current_weight = self.pattern_weights.get(neighbor_key, 1.0)
-                        self.pattern_weights[neighbor_key] = current_weight + (self.learning_rate * success_score * 0.5)
+                        self.pattern_weights[neighbor_key] = current_weight + (self.learning_rate * success_score * config.global_learning_weight)
         
         # Learn from context patterns
         if 'context' in pattern:
@@ -165,12 +169,13 @@ class AdaptiveEntropyCalculator:
         Args:
             success_rate: Current success rate of the generation process
         """
-        if success_rate < 0.3:
+        config = get_entropy_config()
+        if success_rate < config.min_success_rate:
             # Lower temperature when success rate is low to be more conservative
-            self.temperature = max(0.5, self.temperature * 0.95)
-        elif success_rate > 0.7:
+            self.temperature = max(config.min_temperature, self.temperature * config.temperature_decay_factor)
+        elif success_rate > config.max_success_rate:
             # Higher temperature when success rate is high to explore more
-            self.temperature = min(2.0, self.temperature * 1.05)
+            self.temperature = min(config.max_temperature, self.temperature * (2.0 - config.temperature_decay_factor))
     
     def reset_learning(self) -> None:
         """Reset learned patterns."""
@@ -196,8 +201,8 @@ class AdaptiveEntropyCalculator:
 
     def get_self_adapting_temperature(self, 
                                     entropy_history: List[float],
-                                    min_temp: float = 0.5,
-                                    max_temp: float = 2.0) -> float:
+                                    min_temp: Optional[float] = None,
+                                    max_temp: Optional[float] = None) -> float:
         """Calculate self-adapting temperature based on entropy history.
         
         Args:
@@ -208,23 +213,27 @@ class AdaptiveEntropyCalculator:
         Returns:
             float: Adjusted temperature
         """
+        config = get_entropy_config()
+        min_temp = min_temp if min_temp is not None else config.min_temperature
+        max_temp = max_temp if max_temp is not None else config.max_temperature
+        
         if not entropy_history or len(entropy_history) < 3:
             return self.temperature
             
         # Check entropy trend
-        recent = np.array(entropy_history[-5:])
-        if len(recent) < 5:
+        recent = np.array(entropy_history[-config.trend_window_size:])
+        if len(recent) < config.trend_window_size:
             return self.temperature
             
         # Calculate trend
         trend = np.polyfit(range(len(recent)), recent, 1)[0]
         
-        if trend > 0.1:
+        if trend > config.trend_threshold:
             # Entropy increasing - reduce temperature to focus search
-            return max(min_temp, self.temperature * 0.95)
-        elif trend < -0.1:
+            return max(min_temp, self.temperature * config.temperature_decay_factor)
+        elif trend < -config.trend_threshold:
             # Entropy decreasing - increase temperature to explore more
-            return min(max_temp, self.temperature * 1.05)
+            return min(max_temp, self.temperature * (2.0 - config.temperature_decay_factor))
             
         return self.temperature
 
@@ -234,9 +243,10 @@ class MultiScaleEntropyAnalyzer:
     
     def __init__(self):
         """Initialize the multi-scale entropy analyzer."""
-        self.global_entropy_calculator = AdaptiveEntropyCalculator(temperature=1.2)
-        self.intermediate_entropy_calculator = AdaptiveEntropyCalculator(temperature=1.0)
-        self.local_entropy_calculator = AdaptiveEntropyCalculator(temperature=0.8)
+        config = get_entropy_config()
+        self.global_entropy_calculator = AdaptiveEntropyCalculator(temperature=config.default_temperature * 1.2)
+        self.intermediate_entropy_calculator = AdaptiveEntropyCalculator(temperature=config.default_temperature)
+        self.local_entropy_calculator = AdaptiveEntropyCalculator(temperature=config.default_temperature * 0.8)
         self.entropy_history = {
             'global': [],
             'intermediate': [],
@@ -298,6 +308,7 @@ class MultiScaleEntropyAnalyzer:
             level: Generation level
             success_score: A score indicating how successful the pattern was
         """
+        config = get_entropy_config()
         pattern['level'] = level  # Ensure level is in pattern
         
         if level == 'global':
@@ -305,11 +316,11 @@ class MultiScaleEntropyAnalyzer:
         elif level == 'intermediate':
             self.intermediate_entropy_calculator.learn_from_success(pattern, success_score)
             # Also learn at global level with reduced weight
-            self.global_entropy_calculator.learn_from_success(pattern, success_score * 0.5)
+            self.global_entropy_calculator.learn_from_success(pattern, success_score * config.global_learning_weight)
         else:  # local or any other level
             self.local_entropy_calculator.learn_from_success(pattern, success_score)
             # Also learn at intermediate level with reduced weight
-            self.intermediate_entropy_calculator.learn_from_success(pattern, success_score * 0.3)
+            self.intermediate_entropy_calculator.learn_from_success(pattern, success_score * config.intermediate_learning_weight)
     
     def update_success_rate(self, level: str, success: bool) -> None:
         """Update success rate for a level.
@@ -318,9 +329,10 @@ class MultiScaleEntropyAnalyzer:
             level: Generation level
             success: Whether generation was successful
         """
+        config = get_entropy_config()
         rate = self.success_rates.get(level, 1.0)
         # Exponential moving average
-        rate = rate * 0.9 + (1.0 if success else 0.0) * 0.1
+        rate = rate * config.success_decay_factor + (1.0 if success else 0.0) * config.success_smoothing_factor
         self.success_rates[level] = rate
         
         # Adjust temperature based on success rate

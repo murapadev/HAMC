@@ -49,3 +49,8 @@ Thumbs.db
 # Rendered images and data files (if needed)
 *.png
 *.json
+
+test_reports/
+
+.github/
+.vscode/

@@ -4,6 +4,7 @@ from weakref import WeakKeyDictionary
 from threading import Lock
 import time
 import logging
+from ..config.advanced_config import get_cache_config
 
 T = TypeVar('T')
 
@@ -15,17 +16,18 @@ class CompatibilityCache(Generic[T]):
     Implements TTL, LRU eviction and cache statistics.
     """
     
-    def __init__(self, max_size: int = 1024, ttl: float = 300.0):
+    def __init__(self, max_size: Optional[int] = None, ttl: Optional[float] = None):
         """Initialize compatibility cache.
         
         Args:
             max_size: Maximum number of entries per validator cache
             ttl: Time-to-live in seconds for cache entries
         """
+        config = get_cache_config()
         self._caches: WeakKeyDictionary = WeakKeyDictionary()
         self._lock = Lock()
-        self._max_size = max_size
-        self._ttl = ttl  # Time-to-live in seconds
+        self._max_size = max_size if max_size is not None else config.compatibility_cache_max_size
+        self._ttl = ttl if ttl is not None else config.compatibility_cache_ttl  # Time-to-live in seconds
         self._hits = 0
         self._misses = 0
         self._evictions = 0
@@ -114,11 +116,11 @@ class CompatibilityCache(Generic[T]):
             self._misses = 0
             self._evictions = 0
 
-    def get_stats(self) -> Dict[str, Union[int, float]]:
+    def get_stats(self) -> Dict[str, Any]:
         """Get cache statistics.
         
         Returns:
-            Dict[str, Union[int, float]]: Statistics about cache usage
+            Dict[str, Any]: Statistics about cache usage
         """
         with self._lock:
             total_requests = self._hits + self._misses

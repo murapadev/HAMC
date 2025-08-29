@@ -4,18 +4,18 @@ class TileConfig:
     """Configuration for local level tiles."""
     
     BLOCK_TO_TILES: Dict[str, List[Tuple[str, float]]] = {
-        "arboleda":     [("Árbol", 0.7), ("Hierba", 0.3)],
-        "claro":        [("Hierba", 0.7), ("Flores", 0.3)],
-        "rio":          [("Agua", 0.8), ("Hierba", 0.2)],
-        "arena":        [("Arena", 0.8), ("Roca", 0.2)],
+        "grove":        [("Árbol", 0.7), ("Hierba", 0.3)],
+        "clearing":     [("Hierba", 0.7), ("Flores", 0.3)],
+        "river":        [("Agua", 0.8), ("Hierba", 0.2)],
+        "sand":         [("Arena", 0.8), ("Roca", 0.2)],
         "oasis":        [("Agua", 0.4), ("Arena", 0.4), ("Hierba", 0.2)],
-        "residencial":  [("Pared", 0.4), ("Puerta", 0.2), ("Ventana", 0.4)],
-        "comercial":    [("Pared", 0.3), ("Ventana", 0.4), ("Escaparate", 0.3)],
+        "residential":  [("Pared", 0.4), ("Puerta", 0.2), ("Ventana", 0.4)],
+        "commercial":   [("Pared", 0.3), ("Ventana", 0.4), ("Escaparate", 0.3)],
         "industrial":   [("Metal", 0.5), ("Hormigón", 0.5)],
-        "carretera":    [("Asfalto", 0.7), ("Linea", 0.3)],
-        "matorral":     [("Arbusto", 0.5), ("Hierba", 0.3), ("Flores", 0.2)],
-        "periurbano":   [("Asfalto", 0.3), ("Cemento", 0.4), ("Arena", 0.3)],
-        "aldea":        [("Madera", 0.4), ("Hierba", 0.4), ("Piedra", 0.2)]
+        "road":         [("Asfalto", 0.7), ("Linea", 0.3)],
+        "scrubland":    [("Arbusto", 0.5), ("Hierba", 0.3), ("Flores", 0.2)],
+        "periurban":    [("Asfalto", 0.3), ("Cemento", 0.4), ("Arena", 0.3)],
+        "village":      [("Madera", 0.4), ("Hierba", 0.4), ("Piedra", 0.2)]
     }
 
     COMPATIBILITY: Dict[str, Set[str]] = {

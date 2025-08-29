@@ -38,12 +38,12 @@ class TestCell(unittest.TestCase):
 class TestLocalGenerator(unittest.TestCase):
     def setUp(self):
         self.size = 4
-        self.generator = LocalGenerator("rio", self.size)
+        self.generator = LocalGenerator("river", self.size)
 
     def test_initialization(self):
         self.assertEqual(len(self.generator.cells), self.size)
         self.assertEqual(len(self.generator.cells[0]), self.size)
-        self.assertEqual(self.generator.block_type, "rio")
+        self.assertEqual(self.generator.block_type, "river")
 
     def test_river_path_validation(self):
         # Set up a valid river path
@@ -69,11 +69,12 @@ class TestLocalGenerator(unittest.TestCase):
             self.assertIn("Agua", neighbor.possible)
 
     def test_invalid_path(self):
-        # Create discontinuous water path
-        self.generator.cells[0][1].possible = {"Agua": 1.0}
-        self.generator.cells[0][1].collapse()
-        self.generator.cells[2][1].possible = {"Agua": 1.0}
-        self.generator.cells[2][1].collapse()
+        # Create discontinuous water path in center column (should fail for river)
+        center = self.size // 2
+        self.generator.cells[0][center].possible = {"Agua": 1.0}
+        self.generator.cells[0][center].collapse()
+        self.generator.cells[2][center].possible = {"Agua": 1.0}
+        self.generator.cells[2][center].collapse()
         
         self.assertFalse(self.generator.validate_paths())
 
@@ -102,7 +103,7 @@ class TestGlobalGenerator(unittest.TestCase):
 
     def test_region_compatibility(self):
         self.generator.initialize()
-        self.generator.cells[0][0].possible = {"bosque": 1.0}
+        self.generator.cells[0][0].possible = {"forest": 1.0}
         self.generator.cells[0][0].collapse()
         
         success = self.generator.propagate(0, 0)
@@ -112,7 +113,7 @@ class TestGlobalGenerator(unittest.TestCase):
         for r, c in self.generator.get_neighbors(0, 0):
             cell = self.generator.cells[r][c]
             for region in cell.possible:
-                self.assertTrue(RegionConfig.are_compatible("bosque", region))
+                self.assertTrue(RegionConfig.are_compatible("forest", region))
 
 class TestIntermediateGenerator(unittest.TestCase):
     def setUp(self):
@@ -120,10 +121,10 @@ class TestIntermediateGenerator(unittest.TestCase):
         self.assertTrue(self.global_gen.initialize())
         
         # Set specific values for deterministic testing
-        self.global_gen.cells[0][0].possible = {"bosque": 1.0}
-        self.global_gen.cells[0][1].possible = {"desierto": 1.0}
-        self.global_gen.cells[1][0].possible = {"ciudad": 1.0}
-        self.global_gen.cells[1][1].possible = {"bosque": 1.0}
+        self.global_gen.cells[0][0].possible = {"forest": 1.0}
+        self.global_gen.cells[0][1].possible = {"desert": 1.0}
+        self.global_gen.cells[1][0].possible = {"city": 1.0}
+        self.global_gen.cells[1][1].possible = {"forest": 1.0}
         
         # Collapse all cells
         for r in range(2):
@@ -141,7 +142,7 @@ class TestIntermediateGenerator(unittest.TestCase):
         transitions_found = False
         for row in self.generator.cells:
             for cell in row:
-                if "matorral" in cell.possible or "periurbano" in cell.possible:
+                if "scrubland" in cell.possible or "periurban" in cell.possible:
                     transitions_found = True
                     break
         self.assertTrue(transitions_found)

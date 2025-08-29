@@ -5,12 +5,14 @@ from ..core.cell import Cell
 from ..config.tile_config import TileConfig
 from ..core.validator import PathValidator
 from .base_generator import BaseGenerator
+from ..config.advanced_config import get_generator_config
+
 
 class LocalGenerator(BaseGenerator):
     """Generator for local level (tiles) with path validation."""
     
     SPECIAL_BLOCK_TYPES = {
-        "rio", "carretera", "oasis", "residencial", "comercial", "industrial"
+        "river", "road", "oasis", "residential", "commercial", "industrial"
     }
     
     def __init__(self, block_type: str, size: int, 
@@ -45,48 +47,63 @@ class LocalGenerator(BaseGenerator):
 
     def _init_special_block(self) -> bool:
         """Initialize special block types with specific constraints."""
-        if self.block_type == "rio":
+        if self.block_type == "river":
             self._init_river()
-        elif self.block_type == "carretera":
+        elif self.block_type == "road":
             self._init_road()
         elif self.block_type == "oasis":
             self._init_oasis()
-        elif self.block_type in {"residencial", "comercial", "industrial"}:
+        elif self.block_type in {"residential", "commercial", "industrial"}:
             self._init_building()
         return True
 
     def _init_river(self) -> None:
         """Initialize river with water in center column."""
+        config = get_generator_config()
         center = self.width // 2
         
         # Force water in center column if connecting to other rivers
-        if self.neighbors.get('top') == 'rio':
+        if self.neighbors.get('top') == 'river':
             self.cells[0][center].possible = {"Agua": 1.0}
-        if self.neighbors.get('bottom') == 'rio':
+        if self.neighbors.get('bottom') == 'river':
             self.cells[-1][center].possible = {"Agua": 1.0}
             
         # Increase water probability in center column
         for row in range(self.height):
             if not self.cells[row][center].collapsed_value:
-                self.cells[row][center].possible = {"Agua": 0.8, "Hierba": 0.2}
+                self.cells[row][center].possible = {
+                    "Agua": config.local_river_water_probability, 
+                    "Hierba": config.local_river_grass_probability
+                }
 
     def _init_road(self) -> None:
         """Initialize road with asphalt in center row."""
+        config = get_generator_config()
         center = self.height // 2
         
         # Force road tiles if connecting to other roads
-        if self.neighbors.get('left') == 'carretera':
-            self.cells[center][0].possible = {"Asfalto": 0.8, "Linea": 0.2}
-        if self.neighbors.get('right') == 'carretera':
-            self.cells[center][-1].possible = {"Asfalto": 0.8, "Linea": 0.2}
+        if self.neighbors.get('left') == 'road':
+            self.cells[center][0].possible = {
+                "Asfalto": config.local_road_asphalt_probability, 
+                "Linea": config.local_road_line_probability
+            }
+        if self.neighbors.get('right') == 'road':
+            self.cells[center][-1].possible = {
+                "Asfalto": config.local_road_asphalt_probability, 
+                "Linea": config.local_road_line_probability
+            }
             
         # Increase road probability in center row
         for col in range(self.width):
             if not self.cells[center][col].collapsed_value:
-                self.cells[center][col].possible = {"Asfalto": 0.7, "Linea": 0.3}
+                self.cells[center][col].possible = {
+                    "Asfalto": config.local_road_network_asphalt_probability, 
+                    "Linea": config.local_road_network_line_probability
+                }
 
     def _init_oasis(self) -> None:
         """Initialize oasis with water probability distribution."""
+        config = get_generator_config()
         center_r = self.height // 2
         center_c = self.width // 2
         
@@ -101,10 +118,13 @@ class LocalGenerator(BaseGenerator):
                 # Ensure no water at edges
                 if r == 0 or r == self.height-1 or c == 0 or c == self.width-1:
                     # Edges should be sand
-                    self.cells[r][c].possible = {"Arena": 0.9, "Hierba": 0.1}
+                    self.cells[r][c].possible = {
+                        "Arena": config.local_desert_sand_probability, 
+                        "Hierba": config.local_desert_grass_probability
+                    }
                 else:
                     # Water probability decreases with distance from center
-                    water_prob = max(0, 0.9 * (1 - norm_dist**2))
+                    water_prob = max(config.local_min_water_probability, config.local_water_probability_decay * (1 - norm_dist**2))
                     sand_prob = 0.7 * (1 - water_prob)
                     hierba_prob = 1.0 - water_prob - sand_prob
                     
@@ -133,7 +153,7 @@ class LocalGenerator(BaseGenerator):
             self.cells[0][c].possible = {"Pared": 1.0}
             self.cells[-1][c].possible = {"Pared": 1.0}
             
-        if self.block_type == "residencial":
+        if self.block_type == "residential":
             # Add door in middle of one wall
             center = self.width // 2
             self.cells[-1][center].possible = {"Puerta": 1.0}
@@ -151,7 +171,7 @@ class LocalGenerator(BaseGenerator):
 
     def _collapse_strategic_cells(self) -> None:
         """Collapse strategic cells based on block type."""
-        if self.block_type in ["rio", "carretera"]:
+        if self.block_type in ["river", "road"]:
             # Already handled in init methods
             pass
         else:
@@ -235,7 +255,7 @@ class LocalGenerator(BaseGenerator):
                             queue.append((nr, nc))
                         continue
                         
-                elif self.block_type == "carretera" and current in {"Asfalto", "Linea"}:
+                elif self.block_type == "road" and current in {"Asfalto", "Linea"}:
                     # Horizontal neighbor gets high probability of matching tile
                     if abs(nc - cc) == 1:  # Horizontal neighbor
                         new_possible = {current: 0.8, "Asfalto" if current == "Linea" else "Linea": 0.2}
@@ -283,81 +303,36 @@ class LocalGenerator(BaseGenerator):
 
     def collapse(self) -> bool:
         """Run wave function collapse algorithm for local level."""
-        stack = []
-        attempts = 0
-        max_attempts = 500  # Prevent infinite loops
-        start_time = time.time()
-        timeout = 5.0  # Timeout after 5 seconds
-        
-        while attempts < max_attempts and (time.time() - start_time) < timeout:
-            attempts += 1
-            if attempts % 100 == 0:
-                self.logger.warning(f"Many attempts needed: {attempts}")
-            
-            # Find cell with minimum entropy
-            min_entropy = float('inf')
-            target = None
-            
-            for r in range(self.height):
-                for c in range(self.width):
-                    entropy = self.cells[r][c].entropy()
-                    if 0 < entropy < min_entropy:
-                        min_entropy = entropy
-                        target = (r, c)
-            
-            if not target:
-                # Before returning success, validate paths if needed
-                if self.validate_paths():
-                    self.logger.info(f"Collapse successful after {attempts} attempts")
-                    return True
-                if not stack:
-                    self.logger.error("Failed to find valid path configuration")
-                    return False
-                self._restore(stack.pop())
-                continue
-            
-            r, c = target
-            if min_entropy == float('inf'):
-                if not stack:
-                    self.logger.error("No valid options and no backtrack points")
-                    return False
-                self._restore(stack.pop())
-                continue
-            
-            stack.append(self._snapshot())
-            self.cells[r][c].collapse()
-            
-            if not self.propagate(r, c):
-                self.logger.debug(f"Propagation failed at ({r},{c}), backtracking...")
-                self._restore(stack.pop())
-                continue
-        
-        if attempts >= max_attempts:
-            self.logger.error(f"Failed to complete after {max_attempts} attempts")
+        # Use base class collapse method for consistent backtracking
+        if not super().collapse():
             return False
-            
-        if (time.time() - start_time) >= timeout:
-            self.logger.error(f"Timeout after {timeout} seconds")
-            return False
-            
-        return True
+
+        # Additional validation for special path requirements
+        return self.validate_paths()
 
     def validate_paths(self) -> bool:
         """Validate path requirements for special blocks."""
-        tilemap = [[cell.collapsed_value for cell in row] for row in self.cells]
-        
-        if self.block_type == "rio":
+        # Build tilemap from collapsed cells, allowing None values for uncollapsed cells
+        tilemap = []
+        for row in self.cells:
+            tile_row = []
+            for cell in row:
+                value = cell.collapsed_value
+                tile_row.append(value)
+            tilemap.append(tile_row)
+
+        if self.block_type == "river":
             return self.validator.validate_river_path(tilemap, self.neighbors)
-            
-        elif self.block_type == "carretera":
+
+        elif self.block_type == "road":
             return self.validator.validate_road_path(tilemap, self.neighbors)
-            
+
         elif self.block_type == "oasis":
             return self.validator.validate_oasis(tilemap)
-            
-        elif self.block_type in {"residencial", "comercial", "industrial"}:
+
+        elif self.block_type in {"residential", "commercial", "industrial"}:
             return self.validator.validate_building(tilemap, self.block_type)
-            
+
         return True
 
     def validate(self) -> bool:

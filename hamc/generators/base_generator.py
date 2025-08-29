@@ -139,7 +139,7 @@ class BaseGenerator(ABC):
                         cell.possible = valid_possible
                 
                 entropy = cell.entropy()
-                if 0 < entropy < min_entropy:
+                if entropy >= 0 and entropy < min_entropy:
                     min_entropy = entropy
                     target = (r, c)
         

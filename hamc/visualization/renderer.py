@@ -7,27 +7,27 @@ class MapRenderer:
     
     # Color mapping for global regions
     REGION_COLORS = {
-        "bosque":   (34, 139, 34),    # Forest Green
-        "desierto": (238, 214, 175),  # Sand
-        "ciudad":   (128, 128, 128),  # Gray
+        "forest":   (34, 139, 34),    # Forest Green
+        "desert": (238, 214, 175),  # Sand
+        "city":   (128, 128, 128),  # Gray
         "None":     (0, 0, 0),        # Black
         "ERROR":    (255, 0, 0)       # Red
     }
 
     # Color mapping for intermediate blocks (using representative colors)
     BLOCK_COLORS = {
-        "arboleda":     (0, 100, 0),      # Dark Green
-        "claro":        (124, 252, 0),     # Lawn Green
-        "rio":          (0, 191, 255),     # Deep Sky Blue
-        "arena":        (238, 214, 175),   # Sand
+        "grove":        (0, 100, 0),      # Dark Green
+        "clearing":     (124, 252, 0),     # Lawn Green
+        "river":        (0, 191, 255),     # Deep Sky Blue
+        "sand":         (238, 214, 175),   # Sand
         "oasis":        (32, 178, 170),    # Light Sea Green
-        "residencial":  (139, 69, 19),     # Saddle Brown
-        "comercial":    (176, 224, 230),   # Powder Blue
+        "residential":  (139, 69, 19),     # Saddle Brown
+        "commercial":   (176, 224, 230),   # Powder Blue
         "industrial":   (192, 192, 192),   # Silver
-        "carretera":    (70, 70, 70),      # Dark Gray
-        "matorral":     (154, 205, 50),    # Yellow Green
-        "periurbano":   (169, 169, 169),   # Dark Gray
-        "aldea":        (205, 133, 63),    # Peru
+        "road":         (70, 70, 70),      # Dark Gray
+        "scrubland":    (154, 205, 50),    # Yellow Green
+        "periurban":    (169, 169, 169),   # Dark Gray
+        "village":      (205, 133, 63),    # Peru
         "None":         (0, 0, 0),         # Black
         "ERROR":        (255, 0, 0)        # Red
     }

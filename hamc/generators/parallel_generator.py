@@ -201,9 +201,9 @@ class ParallelLocalGenerator:
                 score += 1.0
                 
                 # Special transitions are more constrained
-                if direction in ['top', 'bottom'] and neighbor_type == 'rio':
+                if direction in ['top', 'bottom'] and neighbor_type == 'river':
                     score += 2.0
-                if direction in ['left', 'right'] and neighbor_type == 'carretera':
+                if direction in ['left', 'right'] and neighbor_type == 'road':
                     score += 2.0
         
         return score
