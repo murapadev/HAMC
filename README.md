@@ -8,6 +8,7 @@
 
 <p align="center">
   <a href="https://github.com/murapadev/hamc"><img alt="Repo" src="https://img.shields.io/badge/repo-murapadev%2Fhamc-24292e?logo=github&logoColor=white"></a>
+  <a href="https://github.com/murapadev/hamc/actions/workflows/ci.yml"><img alt="CI" src="https://github.com/murapadev/hamc/actions/workflows/ci.yml/badge.svg"></a>
   <a href="LICENSE"><img alt="License" src="https://img.shields.io/github/license/murapadev/hamc?color=blue"></a>
   <img alt="Python" src="https://img.shields.io/badge/python-3.9%2B-3776AB?logo=python&logoColor=white">
   <img alt="Tests" src="https://img.shields.io/badge/tests-68%20passing-brightgreen?logo=pytest">
@@ -28,6 +29,7 @@
 - Technical Approach
 - Project Structure
 - Quickstart
+- Examples
 - Running Tests
 - Customization
 - Advanced Configuration 🚀
@@ -244,7 +246,25 @@ The `BacktrackManager` provides sophisticated backtracking capabilities:
 4. **Output**
    - `output/global_map.png`: global regions
    - `output/intermediate_map.png`: intermediate blocks
-   - `output/final_tilemap.png`: full tilemap with grid overlays
+    - `output/final_tilemap.png`: full tilemap with grid overlays
+
+## Examples
+
+- CLI via Makefile
+
+  ```bash
+  make demo WIDTH=5 HEIGHT=4 SUBGRID=2 LOCAL=4 OUT=output SEED=42
+  ```
+
+- CLI directly
+
+  ```bash
+  python main.py --width 5 --height 4 --subgrid 2 --local 4 --output output --seed 42
+  ```
+
+- Minimal Python (library usage)
+
+  See the “Generate a quick demo (Python)” snippet in Quickstart for an end‑to‑end example.
 
 ## Running Tests
 
