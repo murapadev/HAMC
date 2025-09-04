@@ -1,6 +1,6 @@
 from typing import NamedTuple
 
-class GeneratorConfig(NamedTuple):
+class LegacyGeneratorBounds(NamedTuple):
     min_region_size: int = 3
     max_region_size: int = 6
     min_block_size: int = 2
@@ -16,3 +16,6 @@ class GeneratorConfig(NamedTuple):
     
     backtrack_limit: int = 100
     cache_size: int = 1024
+
+# Backwards-compat export if external users rely on this symbol name
+GeneratorConfig = LegacyGeneratorBounds
