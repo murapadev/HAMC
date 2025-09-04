@@ -54,3 +54,7 @@ test_reports/
 
 .github/
 .vscode/
+ 
+# Local agent planning notes
+AGENTS.md
+agents.md
