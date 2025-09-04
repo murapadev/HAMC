@@ -1,4 +1,45 @@
-# Hierarchical Adaptive Model Collapse (HAMC)
+# HAMC · Hierarchical Adaptive Model Collapse
+
+<p align="center">
+  <a href="https://github.com/murapadev/hamc">
+    <img src="img/final_tilemap.png" alt="HAMC Final Tilemap" width="720"/>
+  </a>
+</p>
+
+<p align="center">
+  <a href="https://github.com/murapadev/hamc"><img alt="Repo" src="https://img.shields.io/badge/repo-murapadev%2Fhamc-24292e?logo=github&logoColor=white"></a>
+  <a href="LICENSE"><img alt="License" src="https://img.shields.io/github/license/murapadev/hamc?color=blue"></a>
+  <img alt="Python" src="https://img.shields.io/badge/python-3.9%2B-3776AB?logo=python&logoColor=white">
+  <img alt="Tests" src="https://img.shields.io/badge/tests-68%20passing-brightgreen?logo=pytest">
+  <a href="https://github.com/murapadev/hamc/stargazers"><img alt="Stars" src="https://img.shields.io/github/stars/murapadev/hamc?style=social"></a>
+</p>
+
+<p align="center">
+  Multi‑level procedural generation with WFC, adaptive backtracking, and rich validations.
+</p>
+
+---
+
+## Table of Contents
+
+- Quick Look
+- Overview
+- Features
+- Technical Approach
+- Project Structure
+- Quickstart
+- Running Tests
+- Customization
+- Advanced Configuration 🚀
+- Future Enhancements
+- References
+
+## Quick Look
+
+<p>
+  <img src="img/global_map.png" alt="Global Map" width="360"/>
+  <img src="img/tilemap.png" alt="Sample Tile Palette" width="360"/>
+</p>
 
 ## Overview
 
@@ -130,7 +171,7 @@ The `BacktrackManager` provides sophisticated backtracking capabilities:
 - Failed value tracking to avoid repeating errors
 - Level-aware backtracking to optimize performance
 
-## Usage
+## Quickstart
 
 1. **Install dependencies**
 
@@ -138,30 +179,52 @@ The `BacktrackManager` provides sophisticated backtracking capabilities:
    pip install -r requirements.txt
    ```
 
-2. **Run the generator**
+2. **Generate a quick demo (Python)**
 
-   ```bash
-   python main.py [--width WIDTH] [--height HEIGHT] [--subgrid SUBGRID] [--local LOCAL] [--seed SEED] [--output OUTPUT] [--debug]
+   ```python
+   from hamc.generators.global_generator import GlobalGenerator
+   from hamc.generators.intermediate_generator import IntermediateGenerator
+   from hamc.generators.local_generator import LocalGenerator
+   from hamc.visualization.renderer import MapRenderer
+
+   # Params
+   Wg, Hg, S, L = 4, 3, 2, 4
+   renderer = MapRenderer(tile_size=20, padding=1)
+
+   # Global
+   G = GlobalGenerator(Wg, Hg)
+   G.initialize(); G.collapse()
+   regions = [[c.collapsed_value for c in row] for row in G.cells]
+   renderer.render_global_map(regions).save('output/global_map.png')
+
+   # Intermediate
+   I = IntermediateGenerator(G, subgrid_size=S)
+   I.collapse()
+   blocks = [[c.collapsed_value for c in row] for row in I.cells]
+   renderer.render_intermediate_map(blocks).save('output/intermediate_map.png')
+
+   # Local stitching (final tilemap)
+   Lh, Lw = len(I.cells), len(I.cells[0])
+   tilemap = []
+   for br in range(Lh):
+       row_tiles = []
+       for bc in range(Lw):
+           t = I.cells[br][bc].collapsed_value
+           LG = LocalGenerator(t, L)
+           LG.collapse()
+           row_tiles.append([[cell.collapsed_value for cell in r] for r in LG.cells])
+       # horizontal stitch
+       for r in range(L):
+           tilemap.append(sum([b[r] for b in row_tiles], []))
+
+   renderer.render_final_map(tilemap, global_size=(Hg, Wg), intermediate_size=(Hg*S, Wg*S))\
+           .save('output/final_tilemap.png')
    ```
 
-   Parameters:
-
-   - `--width`: Global map width (default: 3)
-   - `--height`: Global map height (default: 3)
-   - `--subgrid`: Intermediate subgrid size (default: 2)
-   - `--local`: Local block size (default: 4)
-   - `--seed`: Random seed for reproducible generation
-   - `--output`: Output directory (default: 'output')
-   - `--debug`: Enable debug logging
-
 3. **Output**
-   The script generates multiple visualization images in the specified output directory:
-   - `global_level.png`: The global regions map
-   - `intermediate_level.png`: The intermediate blocks map
-   - `complete_map.png`: The final detailed tilemap with grid overlays
-   - `complete_tilemap_clean.png`: The final tilemap without grid overlays
-   - `local_blocks/`: Individual local block tilemaps
-   - Various JSON files with the raw map data
+   - `output/global_map.png`: global regions
+   - `output/intermediate_map.png`: intermediate blocks
+   - `output/final_tilemap.png`: full tilemap with grid overlays
 
 ## Running Tests
 
