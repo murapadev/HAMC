@@ -179,7 +179,27 @@ The `BacktrackManager` provides sophisticated backtracking capabilities:
    pip install -r requirements.txt
    ```
 
-2. **Generate a quick demo (Python)**
+2. **Generate a quick demo (CLI)**
+
+   ```bash
+   # Runs the demo pipeline and saves images to ./output
+   python main.py \
+     --width 4 \
+     --height 3 \
+     --subgrid 2 \
+     --local 4 \
+     --output output \
+     --debug
+   ```
+
+   Output files (in `output/`):
+   - `global_map.png` — global regions
+   - `intermediate_map.png` — intermediate blocks
+   - `final_tilemap.png` — full tilemap with overlays
+   - `final_tilemap_clean.png` — full tilemap without overlays
+   - `regions.json`, `blocks.json`, `tilemap.json` — raw data
+
+3. **Generate a quick demo (Python)**
 
    ```python
    from hamc.generators.global_generator import GlobalGenerator
@@ -221,7 +241,7 @@ The `BacktrackManager` provides sophisticated backtracking capabilities:
            .save('output/final_tilemap.png')
    ```
 
-3. **Output**
+4. **Output**
    - `output/global_map.png`: global regions
    - `output/intermediate_map.png`: intermediate blocks
    - `output/final_tilemap.png`: full tilemap with grid overlays
