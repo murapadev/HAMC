@@ -372,7 +372,12 @@ class StrategyFactory:
     def create_algorithm_strategy(self, config: AlgorithmConfig):
         """Create a complete algorithm strategy."""
         selection = self.create_selection_strategy(config.selection_strategy)
-        propagation = self.create_propagation_strategy('basic')  # Default to basic
+        prop_key = 'basic'
+        if config.custom_params and isinstance(config.custom_params, dict):
+            candidate = config.custom_params.get('propagation')
+            if candidate in self._propagation_strategies:
+                prop_key = candidate
+        propagation = self.create_propagation_strategy(prop_key)
         
         if config.algorithm_type not in self._algorithm_strategies:
             raise StrategyError(f"Unknown algorithm type: {config.algorithm_type}")
