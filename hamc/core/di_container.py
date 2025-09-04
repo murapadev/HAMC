@@ -62,7 +62,6 @@ class DependencyContainer:
     
     def __init__(self):
         self._registrations: Dict[Type, ComponentRegistration] = {}
-        self._instances: WeakKeyDictionary = WeakKeyDictionary()
         self._scoped_instances: Dict[str, Dict[Type, Any]] = {}
         self._lock = Lock()
         self._current_scope: Optional[str] = None
@@ -213,7 +212,15 @@ class DependencyContainer:
             # Try to resolve dependency
             if param.annotation != inspect.Parameter.empty:
                 try:
-                    init_params[param_name] = self.resolve(param.annotation, scope_name)
+                    target = self._normalize_annotation(param.annotation)
+                    if isinstance(target, str):
+                        # Find by registered service name
+                        match = next((st for st in self._registrations.keys() if st.__name__ == target), None)
+                        if match is None:
+                            raise ServiceNotFoundException(target)
+                        init_params[param_name] = self.resolve(match, scope_name)
+                    else:
+                        init_params[param_name] = self.resolve(target, scope_name)
                 except ServiceNotFoundException:
                     # If dependency not found, use default value or None
                     if param.default != inspect.Parameter.empty:
@@ -228,6 +235,22 @@ class DependencyContainer:
                     init_params[param_name] = None
         
         return registration.implementation_type(**init_params)
+
+    def _normalize_annotation(self, annotation: Any) -> Any:
+        """Normalize typing annotations: handle Optional[T] and forward refs."""
+        try:
+            from typing import get_origin, get_args
+            origin = get_origin(annotation)
+            if origin is None:
+                # Forward ref as string
+                if isinstance(annotation, str):
+                    return annotation
+                return annotation
+            # Optional[T] or Union[T, None]
+            args = [a for a in get_args(annotation) if a is not type(None)]  # noqa: E721
+            return args[0] if args else annotation
+        except Exception:
+            return annotation
     
     def _analyze_dependencies(self, implementation_type: Type) -> List[str]:
         """Analyze the dependencies of an implementation type."""
@@ -242,7 +265,8 @@ class DependencyContainer:
                 continue
                 
             if param.annotation != inspect.Parameter.empty:
-                dependencies.append(param.annotation.__name__)
+                ann = self._normalize_annotation(param.annotation)
+                dependencies.append(ann if isinstance(ann, str) else getattr(ann, '__name__', str(ann)))
         
         return dependencies
     
