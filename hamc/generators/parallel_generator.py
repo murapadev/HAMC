@@ -22,6 +22,9 @@ class ParallelLocalGenerator:
         self.pattern_detector = PatternDetector()
         self.successful_blocks: Dict[str, List[List[List[str]]]] = {}
         self.lock = threading.Lock()
+        # Optional shape attributes for orchestration contexts
+        self.width: Optional[int] = None
+        self.height: Optional[int] = None
         
     def generate_blocks(self, 
                       block_configs: List[Dict[str, Any]], 
