@@ -66,11 +66,9 @@ class HAMCArchitecture:
         available_plugins = self.plugin_manager.discover_plugins()
         self._logger.info(f"Discovered {len(available_plugins)} plugins")
         
-        # Load core plugins (if any)
-        core_plugins = ['hamc.core.plugins.generator_plugin', 'hamc.core.plugins.validation_plugin']
-        for plugin_name in core_plugins:
-            if plugin_name in available_plugins:
-                self.plugin_manager.load_plugin(plugin_name)
+        # Load discovered plugins by default (no hardcoded names)
+        for plugin_name in available_plugins:
+            self.plugin_manager.load_plugin(plugin_name)
     
     def _setup_factory_relationships(self) -> None:
         """Set up relationships between factories."""
@@ -133,7 +131,6 @@ class HAMCCore:
         """Create an algorithm strategy."""
         if not self._architecture:
             raise RuntimeError("HAMC Core not initialized")
-        
         return self._architecture.strategy_factory.create_algorithm_strategy(algorithm_config)
     
     def execute_hook(self, hook_point: str, *args, **kwargs) -> List[Any]:

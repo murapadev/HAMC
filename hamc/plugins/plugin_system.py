@@ -197,6 +197,14 @@ class HookManager:
     
     def execute_hook(self, hook_point: str, *args, **kwargs) -> List[Any]:
         """Execute all callbacks for a hook point."""
+        # Validate hook name early to avoid silent no-ops
+        try:
+            valid = {hp.value for hp in HookPoint}
+        except Exception:
+            valid = set()
+        if valid and hook_point not in valid:
+            self._logger.warning(f"Unknown hook point: {hook_point}")
+            return []
         if hook_point not in self._hooks:
             return []
         
@@ -347,6 +355,12 @@ class PluginManager:
         metadata = plugin.metadata
         
         for hook_name in metadata.hooks:
+            # Validate hook against known points
+            if hook_name not in {hp.value for hp in HookPoint}:
+                self._logger.warning(
+                    f"Plugin {metadata.name} declares unknown hook '{hook_name}'"
+                )
+                continue
             if hasattr(plugin, f'on_{hook_name}'):
                 hook_method = getattr(plugin, f'on_{hook_name}')
                 self._hook_manager.register_hook(hook_name, hook_method)
