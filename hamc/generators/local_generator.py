@@ -158,7 +158,7 @@ class LocalGenerator(BaseGenerator):
             center = self.width // 2
             self.cells[-1][center].possible = {"Puerta": 1.0}
             
-        elif self.block_type == "comercial":
+        elif self.block_type in {"commercial", "comercial"}:
             # Add display windows on ground floor
             for c in range(1, self.width-1):
                 self.cells[-1][c].possible = {"Escaparate": 0.7, "Ventana": 0.3}
@@ -246,14 +246,14 @@ class LocalGenerator(BaseGenerator):
                     continue
                     
                 # Special handling for different block types
-                if self.block_type == "rio" and current == "Agua":
+                if self.block_type == "river" and current == "Agua":
                     # Vertical neighbor gets high probability of water
                     if abs(nr - cr) == 1:  # Vertical neighbor
                         new_possible = {"Agua": 0.8, "Hierba": 0.2}
                         if new_possible != neighbor.possible:
                             neighbor.possible = new_possible
                             queue.append((nr, nc))
-                        continue
+                            continue
                         
                 elif self.block_type == "road" and current in {"Asfalto", "Linea"}:
                     # Horizontal neighbor gets high probability of matching tile

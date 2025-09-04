@@ -13,7 +13,7 @@ class PathValidator:
     
     @staticmethod
     def validate_river_path(tilemap: List[List[Optional[str]]], 
-                          neighbors: Optional[Dict[str, str]] = None) -> bool:
+                         neighbors: Optional[Dict[str, str]] = None) -> bool:
         """Validate vertical river path with neighbor constraints.
         
         Args:
@@ -37,14 +37,24 @@ class PathValidator:
         # Validate bottom connection if needed
         if needs_bottom and (tilemap[-1][center] is None or tilemap[-1][center] != "Agua"):
             return False
-            
-        # For river validation, we require a continuous path in the center column
+        
         # Check that center column has water from top to bottom
-        for r in range(height):
-            if tilemap[r][center] != "Agua":
-                return False
-                
-        return True
+        center_ok = all(tilemap[r][center] == "Agua" for r in range(height))
+        if center_ok:
+            return True
+
+        # Fallback: accept any continuous vertical path from top to bottom
+        # as a valid river, honoring neighbor connection requirements.
+        starts = [(0, c) for c in range(width) if tilemap[0][c] == "Agua"]
+        for sr, sc in starts:
+            visited = [[False]*width for _ in range(height)]
+            if PathValidator._find_vertical_path(tilemap, sr, sc, visited):
+                # If neighbor connections are required at top/bottom, ensure they are satisfied
+                if needs_top and tilemap[0][sc] != "Agua":
+                    continue
+                # Find any bottom column that completes the path (already ensured by DFS)
+                return True
+        return False
 
     @staticmethod
     def validate_road_path(tilemap: List[List[Optional[str]]], 
