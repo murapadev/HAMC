@@ -178,12 +178,19 @@ class PatternDetector:
         weights = defaultdict(float)
         r, c = position
         
-        # Check position against known pattern positions
+        # Align each known pattern so that one of its elements would fall at (r, c)
         for pattern in self.known_patterns:
             for value, (pr, pc) in pattern.elements:
-                # If the relative position matches, increase weight for that value
-                if (r - pr, c - pc) in self.value_positions.get(value, []):
-                    weights[value] += pattern.significance
+                # Anchor pattern so that (pr, pc) maps to (r, c)
+                anchor_r, anchor_c = r - pr, c - pc
+                match_score = 0
+                # For all elements in the pattern, compute absolute position
+                for val2, (pr2, pc2) in pattern.elements:
+                    abs_pos = (anchor_r + pr2, anchor_c + pc2)
+                    if abs_pos in self.value_positions.get(val2, []):
+                        match_score += 1
+                if match_score > 0:
+                    weights[value] += pattern.significance * (match_score / max(1, pattern.size))
         
         # Normalize weights
         total = sum(weights.values()) or 1.0
