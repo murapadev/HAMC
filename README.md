@@ -18,7 +18,6 @@
 
 ## Table of Contents
 
-- Quick Look
 - Overview
 - Features
 - Technical Approach
