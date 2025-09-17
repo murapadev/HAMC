@@ -1,14 +1,9 @@
 # HAMC · Hierarchical Adaptive Model Collapse
 
-<p align="center">
-  <a href="https://github.com/murapadev/hamc">
-    <img src="img/final_tilemap.png" alt="HAMC Final Tilemap" width="720"/>
-  </a>
-</p>
+
 
 <p align="center">
   <a href="https://github.com/murapadev/hamc"><img alt="Repo" src="https://img.shields.io/badge/repo-murapadev%2Fhamc-24292e?logo=github&logoColor=white"></a>
-  <a href="https://github.com/murapadev/hamc/actions/workflows/ci.yml"><img alt="CI" src="https://github.com/murapadev/hamc/actions/workflows/ci.yml/badge.svg"></a>
   <a href="LICENSE"><img alt="License" src="https://img.shields.io/github/license/murapadev/hamc?color=blue"></a>
   <img alt="Python" src="https://img.shields.io/badge/python-3.9%2B-3776AB?logo=python&logoColor=white">
   <img alt="Tests" src="https://img.shields.io/badge/tests-68%20passing-brightgreen?logo=pytest">
