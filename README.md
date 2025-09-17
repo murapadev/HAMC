@@ -1,7 +1,6 @@
 # HAMC · Hierarchical Adaptive Model Collapse
 
 
-
 <p align="center">
   <a href="https://github.com/murapadev/hamc"><img alt="Repo" src="https://img.shields.io/badge/repo-murapadev%2Fhamc-24292e?logo=github&logoColor=white"></a>
   <a href="LICENSE"><img alt="License" src="https://img.shields.io/github/license/murapadev/hamc?color=blue"></a>
@@ -18,17 +17,17 @@
 
 ## Table of Contents
 
-- Overview
-- Features
-- Technical Approach
-- Project Structure
-- Quickstart
-- Examples
-- Running Tests
-- Customization
-- Advanced Configuration 🚀
-- Future Enhancements
-- References
+- [Overview](#overview)
+- [Features](#features)
+- [Technical Approach](#technical-approach)
+- [Project Structure](#project-structure)
+- [Quickstart](#quickstart)
+- [Examples](#examples)
+- [Running Tests](#running-tests)
+- [Customization](#customization)
+- [Advanced Configuration 🚀](#advanced-configuration-🚀)
+- [Future Enhancements](#future-enhancements)
+- [References](#references)
 
 ## Overview
 
@@ -39,7 +38,7 @@ This repository contains a multi-level procedural content generation system that
 - **Connectivity constraints** specifically for rivers, roads, and other special structures
 - **Adaptive backtracking** for better handling of generation failures
 
-The approach is inspired by a hierarchical generative model where each level (Global, Intermediate, and Local) collapses its cells using a WFC-like method with distinct rules, weights, and constraints.
+The approach is inspired by a hierarchical generative model where each level (Global, Intermediate, and Local) collapses its cells using a WFC-like method with distinct rules, weights, and constra[...]  
 
 ## Features
 
@@ -72,7 +71,7 @@ The system is divided into **three hierarchical layers**:
    - Incorporates **connectivity constraints**, such as requiring a "river" block to have a vertical "Agua" path, or a "road" block to have a horizontal "Asfalto/Linea" path.
    - Special blocks like "oasis" have center-focused water distribution.
 
-At each level, a "collapse and propagation" algorithm is applied with an **entropy function** based on the **weights** of each option (using _Shannon entropy_). When a cell collapses, constraints propagate to neighboring cells, eliminating incompatible options.
+At each level, a "collapse and propagation" algorithm is applied with an **entropy function** based on the **weights** of each option (using _Shannon entropy_). When a cell collapses, constraints [...]  
 
 ## Project Structure
 
