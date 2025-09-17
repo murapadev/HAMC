@@ -36,13 +36,6 @@
 - Future Enhancements
 - References
 
-## Quick Look
-
-<p>
-  <img src="img/global_map.png" alt="Global Map" width="360"/>
-  <img src="img/tilemap.png" alt="Sample Tile Palette" width="360"/>
-</p>
-
 ## Overview
 
 This repository contains a multi-level procedural content generation system that combines:
