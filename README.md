@@ -25,7 +25,7 @@
 - [Examples](#examples)
 - [Running Tests](#running-tests)
 - [Customization](#customization)
-- [Advanced Configuration 🚀](#advanced-configuration-🚀)
+- [Advanced Configuration 🚀](#advanced-configuration)
 - [Future Enhancements](#future-enhancements)
 - [References](#references)
 
@@ -274,6 +274,8 @@ You can customize the generation by modifying:
 - **Configurations**: Edit files in the `hamc/config/` directory to change probabilities, compatibility rules, and available elements
 - **Generator parameters**: Adjust map sizes, subgrid divisions, and other parameters in `main.py`
 - **Connectivity constraints**: Modify validation methods in `validator.py` to add specific constraints
+
+<a id="advanced-configuration"></a>
 
 ## Advanced Configuration System 🚀
 
