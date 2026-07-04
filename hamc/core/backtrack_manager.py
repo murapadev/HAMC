@@ -274,7 +274,7 @@ class BacktrackManager:
             "stack_entropy_stats": {
                 "min": min((p.entropy for p in self.heap), default=0),
                 "max": max((p.entropy for p in self.heap), default=0),
-                "avg": sum((p.entropy for p in self.heap), default=0) / max(len(self.heap), 1),
+                "avg": sum(p.entropy for p in self.heap) / max(len(self.heap), 1),
                 "levels": list(set(p.level for p in self.heap))
             } if self.heap else {}
         }

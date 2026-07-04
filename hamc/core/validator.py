@@ -111,8 +111,8 @@ class PathValidator:
         sand_count = sum(1 for row in tilemap for tile in row if tile == "Arena")
         
         # Oasis should have both water and sand with more relaxed proportions
-        min_water = (height * width) * config.min_water_percentage  # Reduced from 0.2
-        min_sand = (height * width) * 0.2   # Reduced from 0.3
+        min_water = (height * width) * config.min_water_percentage
+        min_sand = (height * width) * 0.2
         
         if water_count < min_water:
             return False
@@ -184,7 +184,7 @@ class PathValidator:
             if door_count == 0 or window_count < 2:
                 return False
                 
-        elif block_type == "comercial":
+        elif block_type == "commercial":
             # Commercial blocks need display windows
             display_count = sum(1 for row in tilemap 
                               for tile in row if tile == "Escaparate")
@@ -202,43 +202,39 @@ class PathValidator:
         return True
 
     @staticmethod
-    def _find_vertical_path(tilemap: List[List[Optional[str]]], r: int, c: int, 
+    def _find_vertical_path(tilemap: List[List[Optional[str]]], r: int, c: int,
                           visited: List[List[bool]]) -> bool:
-        """Find continuous vertical path using DFS."""
-        if r == len(tilemap) - 1:
-            return True
-            
-        visited[r][c] = True
+        """Find continuous vertical path using iterative DFS."""
         height, width = len(tilemap), len(tilemap[0])
-        
-        # Try moving down, down-left, or down-right
-        for dr, dc in [(1, 0), (1, -1), (1, 1)]:
-            nr, nc = r + dr, c + dc
-            if (0 <= nr < height and 0 <= nc < width and
-                not visited[nr][nc] and tilemap[nr][nc] == "Agua"):
-                if PathValidator._find_vertical_path(tilemap, nr, nc, visited):
-                    return True
-                    
+        stack = [(r, c)]
+        while stack:
+            cr, cc = stack.pop()
+            if cr == height - 1:
+                return True
+            visited[cr][cc] = True
+            for dr, dc in [(1, 0), (1, -1), (1, 1)]:
+                nr, nc = cr + dr, cc + dc
+                if (0 <= nr < height and 0 <= nc < width and
+                    not visited[nr][nc] and tilemap[nr][nc] == "Agua"):
+                    stack.append((nr, nc))
         return False
 
     @staticmethod
     def _find_horizontal_path(tilemap: List[List[Optional[str]]], r: int, c: int,
                             visited: List[List[bool]], valid_tiles: Set[str]) -> bool:
-        """Find continuous horizontal path using DFS."""
-        if c == len(tilemap[0]) - 1:
-            return True
-            
-        visited[r][c] = True
+        """Find continuous horizontal path using iterative DFS."""
         height, width = len(tilemap), len(tilemap[0])
-        
-        # Try moving right, up-right, or down-right
-        for dr, dc in [(0, 1), (-1, 1), (1, 1)]:
-            nr, nc = r + dr, c + dc
-            if (0 <= nr < height and 0 <= nc < width and
-                not visited[nr][nc] and tilemap[nr][nc] in valid_tiles):
-                if PathValidator._find_horizontal_path(tilemap, nr, nc, visited, valid_tiles):
-                    return True
-                    
+        stack = [(r, c)]
+        while stack:
+            cr, cc = stack.pop()
+            if cc == width - 1:
+                return True
+            visited[cr][cc] = True
+            for dr, dc in [(0, 1), (-1, 1), (1, 1)]:
+                nr, nc = cr + dr, cc + dc
+                if (0 <= nr < height and 0 <= nc < width and
+                    not visited[nr][nc] and tilemap[nr][nc] in valid_tiles):
+                    stack.append((nr, nc))
         return False
 
     @staticmethod
@@ -249,16 +245,17 @@ class PathValidator:
         visited = [[False]*width for _ in range(height)]
         sections = []
         
-        def flood_fill(r: int, c: int, section: Set[Tuple[int, int]]) -> None:
-            if (not (0 <= r < height and 0 <= c < width) or
-                visited[r][c] or tilemap[r][c] not in valid_tiles):
-                return
-                
-            visited[r][c] = True
-            section.add((r, c))
-            
-            for dr, dc in [(0, 1), (1, 0), (0, -1), (-1, 0)]:
-                flood_fill(r + dr, c + dc, section)
+        def flood_fill(start_r: int, start_c: int, section: Set[Tuple[int, int]]) -> None:
+            stack = [(start_r, start_c)]
+            while stack:
+                r, c = stack.pop()
+                if (not (0 <= r < height and 0 <= c < width) or
+                    visited[r][c] or tilemap[r][c] not in valid_tiles):
+                    continue
+                visited[r][c] = True
+                section.add((r, c))
+                for dr, dc in [(0, 1), (1, 0), (0, -1), (-1, 0)]:
+                    stack.append((r + dr, c + dc))
         
         for r in range(height):
             for c in range(width):

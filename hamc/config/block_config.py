@@ -45,14 +45,16 @@ class BlockConfig:
         "clearing": {"grove", "clearing", "river", "scrubland", "periurban"},  # Added periurban
         "river": {"grove", "clearing", "sand", "oasis", "river", "periurban"},  # Added periurban
         "sand": {"sand", "oasis", "river", "scrubland", "village"},
-        "oasis": {"sand", "river", "scrubland"},
-        "residential": {"residential", "commercial", "road", "periurban"},
-        "commercial": {"residential", "commercial", "industrial", "road", "periurban"},
-        "industrial": {"commercial", "industrial", "road", "periurban"},
+        "oasis": {"oasis", "sand", "river", "scrubland"},  # self-adjacent like every other block
+        "residential": {"residential", "commercial", "road", "periurban", "village"},
+        "commercial": {"residential", "commercial", "industrial", "road", "periurban", "village"},
+        "industrial": {"commercial", "industrial", "road", "periurban", "village"},
         "road": {"residential", "commercial", "industrial", "periurban", "village"},
         "scrubland": {"grove", "clearing", "sand", "oasis", "periurban", "scrubland"},  # Added scrubland
         "periurban": {"grove", "residential", "commercial", "industrial", "road", "scrubland", "clearing", "periurban", "river"},  # Added river
-        "village": {"sand", "road"}
+        # village is the desert<->city transition block, so it must connect to
+        # both the desert side (sand/road) and the city blocks it borders.
+        "village": {"sand", "road", "residential", "commercial", "industrial", "village"},
     }
 
     @classmethod
@@ -75,5 +77,23 @@ class BlockConfig:
         """Check if two blocks can be adjacent."""
         if block1 not in cls.COMPATIBILITY or block2 not in cls.COMPATIBILITY:
             return False
-        # Check compatibility in both directions
+        # The graph is symmetrized at import time, so a single-direction check
+        # is sufficient; keep the bidirectional check as a cheap safety net.
         return block2 in cls.COMPATIBILITY[block1] and block1 in cls.COMPATIBILITY[block2]
+
+
+def _symmetrize(graph: Dict[str, Set[str]]) -> None:
+    """Add the reverse edge for every adjacency so the graph is symmetric.
+
+    The compatibility tables are hand-written and drifted out of symmetry over
+    time (e.g. ``village`` listed ``road`` but ``road`` did not list
+    ``village``). ``are_compatible`` requires both directions, so any asymmetry
+    produced spurious dead-ends and needless backtracking. Closing the graph
+    here keeps the data declarative while guaranteeing the invariant.
+    """
+    for node, neighbours in list(graph.items()):
+        for other in list(neighbours):
+            graph.setdefault(other, set()).add(node)
+
+
+_symmetrize(BlockConfig.COMPATIBILITY)

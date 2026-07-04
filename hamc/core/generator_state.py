@@ -81,11 +81,15 @@ class GeneratorState:
         self.warnings: Dict[str, int] = {}
         self.timing: Dict[str, float] = {}
         
-        # Configure logger
-        formatter = logging.Formatter('%(asctime)s - %(name)s - %(levelname)s - %(message)s')
-        handler = logging.StreamHandler()
-        handler.setFormatter(formatter)
-        self.logger.addHandler(handler)
+        # Configure logger only if nothing in the hierarchy is configured yet.
+        # ``hasHandlers`` checks ancestors too, so a host app (dashboard, CLI)
+        # that has already called ``logging.basicConfig`` won't get duplicate
+        # output from each generator instance.
+        if not self.logger.hasHandlers():
+            formatter = logging.Formatter('%(asctime)s - %(name)s - %(levelname)s - %(message)s')
+            handler = logging.StreamHandler()
+            handler.setFormatter(formatter)
+            self.logger.addHandler(handler)
         self.logger.setLevel(log_level)
 
     def update_status(self, status: GeneratorStatus, message: Optional[str] = None) -> None:

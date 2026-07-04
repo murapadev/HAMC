@@ -16,6 +16,7 @@ A concise, hierarchical procedural-generation toolkit combining Wave Function Co
 
 - Overview: #overview
 - Quickstart: #quickstart
+- Live dashboard: #live-dashboard
 - Examples: #examples
 - Configuration: #configuration
 - Tests: #running-tests
@@ -38,10 +39,13 @@ Core ideas: weighted choices, entropy-based cell selection, constraint propagati
 - Transition zones and special block types (oasis, buildings)
 - Adaptive backtracking with failure tracking
 - Renderer for per-level visualization
+- Live browser dashboard streaming the generation process (SSE, no extra deps)
 
 ## Project layout
 
 - main.py — CLI entry point
+- dashboard.py — live dashboard server (SSE)
+- dashboard_static/ — dashboard frontend (HTML/CSS/JS)
 - hamc/
   - config/ — configuration files
   - core/ — cell, entropy, backtracking, validators
@@ -100,6 +104,33 @@ for br in range(Lh):
         tilemap.append(sum([b[r] for b in row_tiles], []))
 
 renderer.render_final_map(tilemap, global_size=(Hg, Wg), intermediate_size=(Hg*S, Wg*S)).save('output/final_tilemap.png')
+```
+
+## Live dashboard
+
+Watch the WFC process collapse in real time. The dashboard is a tiny stdlib
+HTTP server that streams generator events through Server-Sent Events:
+
+```bash
+python dashboard.py --open          # serves http://127.0.0.1:8765
+# or
+make dashboard PORT=9000
+```
+
+The browser UI renders three synchronized canvases (global → intermediate →
+local) and pulses each cell as it collapses. The right-hand log shows
+collapses, conflicts, and backtracks with timestamps. Adjust grid sizes,
+step delay and seed from the side panel.
+
+Hook into the same event stream programmatically by registering a callback:
+
+```python
+def observer(event):
+    print(event["type"], event.get("pos"), event.get("value"))
+
+G = GlobalGenerator(4, 3)
+G.set_observer(observer, step_delay=0.05)
+G.collapse()
 ```
 
 ## Configuration
