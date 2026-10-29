@@ -1,0 +1,222 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>HAMC · Live generation studio</title>
+  <link rel="preconnect" href="https://rsms.me/" />
+  <link rel="stylesheet" href="https://rsms.me/inter/inter.css" />
+  <link rel="stylesheet" href="/app.css" />
+  <link rel="icon" type="image/svg+xml" href="data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24'><path d='M4 14L12 4l8 10-8 6z' fill='%2367d3ff'/></svg>" />
+</head>
+<body>
+  <div class="app">
+    <header class="appbar">
+      <div class="appbar-brand">
+        <span class="mark">
+          <svg viewBox="0 0 24 24" width="20" height="20" aria-hidden="true">
+            <path d="M4 14L12 4l8 10-8 6z" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linejoin="round"/>
+            <path d="M8 14h8" stroke="currentColor" stroke-width="1.2" />
+          </svg>
+        </span>
+        <div class="title">
+          <h1>HAMC <span class="muted">·</span> <em>Live Studio</em></h1>
+          <p>Hierarchical Adaptive Model Collapse — real-time observer</p>
+        </div>
+      </div>
+      <div class="appbar-actions">
+        <div id="banner" class="banner" hidden></div>
+        <div class="status" id="status">
+          <span class="dot"></span><span id="status-text">idle</span>
+        </div>
+      </div>
+    </header>
+
+    <aside class="sidebar">
+      <section class="card">
+        <header class="card-h">
+          <h2>Run</h2>
+          <span class="hint" id="run-summary">configure & generate</span>
+        </header>
+        <form id="params" class="form-grid">
+          <label class="field">
+            <span>Width</span>
+            <input type="number" name="width" value="4" min="1" max="16" />
+          </label>
+          <label class="field">
+            <span>Height</span>
+            <input type="number" name="height" value="3" min="1" max="16" />
+          </label>
+          <label class="field">
+            <span>Subgrid</span>
+            <input type="number" name="subgrid" value="2" min="1" max="8" />
+          </label>
+          <label class="field">
+            <span>Local</span>
+            <input type="number" name="local" value="4" min="2" max="12" />
+          </label>
+          <label class="field span-2">
+            <span>Server delay <em>(s)</em></span>
+            <input type="number" name="delay" value="0" step="0.01" min="0" max="1" />
+          </label>
+          <label class="field span-2">
+            <span>Seed <em>(optional)</em></span>
+            <input type="text" name="seed" placeholder="leave blank" />
+          </label>
+          <div class="actions span-2">
+            <button id="run" type="submit" class="primary">
+              <svg viewBox="0 0 16 16" width="12" height="12" aria-hidden="true"><polygon points="3,2 14,8 3,14" fill="currentColor"/></svg>
+              Generate
+            </button>
+            <button id="stop" type="button" disabled>Stop</button>
+          </div>
+        </form>
+      </section>
+
+      <section class="card">
+        <header class="card-h">
+          <h2>Playback</h2>
+          <span class="hint" id="speed-label">120 ev/s</span>
+        </header>
+        <div class="playback">
+          <div class="transport">
+            <button id="pause" type="button" disabled title="Pause / play">
+              <svg id="pause-icon" viewBox="0 0 16 16" width="12" height="12" aria-hidden="true">
+                <rect x="3" y="2" width="3" height="12" fill="currentColor"/>
+                <rect x="10" y="2" width="3" height="12" fill="currentColor"/>
+              </svg>
+            </button>
+            <button id="step" type="button" disabled title="Step one event">
+              <svg viewBox="0 0 16 16" width="12" height="12" aria-hidden="true">
+                <polygon points="3,2 11,8 3,14" fill="currentColor"/>
+                <rect x="12" y="2" width="2" height="12" fill="currentColor"/>
+              </svg>
+            </button>
+          </div>
+          <input type="range" id="speed" min="1" max="600" step="1" value="120" />
+          <dl class="kv">
+            <dt>Queue</dt><dd id="queue-size">0</dd>
+            <dt>Rendered</dt><dd id="rendered">0</dd>
+          </dl>
+        </div>
+      </section>
+
+      <section class="card">
+        <header class="card-h"><h2>Telemetry</h2></header>
+        <div class="telemetry">
+          <div class="stat">
+            <span class="stat-label">Elapsed</span>
+            <span class="stat-value" id="m-elapsed">0.00<small>s</small></span>
+          </div>
+          <div class="stat">
+            <span class="stat-label">Events</span>
+            <span class="stat-value" id="m-events">0</span>
+          </div>
+          <div class="stat span-2">
+            <span class="stat-label">Events / sec</span>
+            <svg id="spark-events" class="spark" viewBox="0 0 120 30" preserveAspectRatio="none">
+              <polyline fill="none" stroke="currentColor" stroke-width="1.2" points="" />
+            </svg>
+          </div>
+          <div class="stat span-2">
+            <span class="stat-label">Avg entropy</span>
+            <svg id="spark-entropy" class="spark" viewBox="0 0 120 30" preserveAspectRatio="none">
+              <polyline fill="none" stroke="currentColor" stroke-width="1.2" points="" />
+            </svg>
+          </div>
+          <div class="stat span-2">
+            <dl class="kv compact">
+              <dt>Global</dt><dd id="m-global">0 / 0 · 0 ↶</dd>
+              <dt>Intermediate</dt><dd id="m-intermediate">0 / 0 · 0 ↶</dd>
+              <dt>Local</dt><dd id="m-local">0 / 0 blocks · 0 tiles</dd>
+            </dl>
+          </div>
+        </div>
+      </section>
+
+      <section class="card">
+        <header class="card-h"><h2>Downloads</h2></header>
+        <div class="downloads" id="downloads">
+          <button data-kind="regions" disabled>regions.json</button>
+          <button data-kind="blocks"  disabled>blocks.json</button>
+          <button data-kind="tilemap" disabled>tilemap.json</button>
+          <button data-kind="png"     disabled>tilemap.png</button>
+        </div>
+      </section>
+
+      <section class="card grow">
+        <header class="card-h">
+          <h2>Event log</h2>
+          <button id="clear-log" type="button" class="ghost">clear</button>
+        </header>
+        <ol class="log" id="log"></ol>
+      </section>
+    </aside>
+
+    <main class="stage">
+      <section class="layer" data-layer="global">
+        <header class="layer-h">
+          <div class="layer-title">
+            <span class="layer-idx">01</span>
+            <h3>Global · regions</h3>
+          </div>
+          <span class="layer-tag" id="global-tag"></span>
+        </header>
+        <div class="canvas-wrap">
+          <canvas id="canvas-global" width="320" height="240"></canvas>
+          <div class="tooltip" id="tip-global" hidden></div>
+        </div>
+        <div class="layer-foot">
+          <progress id="prog-global" max="1" value="0"></progress>
+          <div class="legend" id="legend-global"></div>
+        </div>
+      </section>
+
+      <section class="layer" data-layer="intermediate">
+        <header class="layer-h">
+          <div class="layer-title">
+            <span class="layer-idx">02</span>
+            <h3>Intermediate · blocks</h3>
+          </div>
+          <span class="layer-tag" id="intermediate-tag"></span>
+        </header>
+        <div class="canvas-wrap">
+          <canvas id="canvas-intermediate" width="320" height="240"></canvas>
+          <div class="tooltip" id="tip-intermediate" hidden></div>
+        </div>
+        <div class="layer-foot">
+          <progress id="prog-intermediate" max="1" value="0"></progress>
+          <div class="legend" id="legend-intermediate"></div>
+        </div>
+      </section>
+
+      <section class="layer wide" data-layer="local">
+        <header class="layer-h">
+          <div class="layer-title">
+            <span class="layer-idx">03</span>
+            <h3>Local · tilemap</h3>
+          </div>
+          <div class="layer-actions">
+            <span class="layer-tag" id="local-tag"></span>
+            <button id="fullscreen" type="button" class="ghost" title="Fullscreen">
+              <svg viewBox="0 0 16 16" width="12" height="12" aria-hidden="true">
+                <path d="M2 5V2h3M14 5V2h-3M2 11v3h3M14 11v3h-3" fill="none" stroke="currentColor" stroke-width="1.6"/>
+              </svg>
+            </button>
+          </div>
+        </header>
+        <div class="canvas-wrap tall">
+          <canvas id="canvas-local" width="640" height="480"></canvas>
+          <div class="tooltip" id="tip-local" hidden></div>
+        </div>
+        <div class="layer-foot">
+          <progress id="prog-local" max="1" value="0"></progress>
+          <div class="legend" id="legend-local"></div>
+        </div>
+      </section>
+    </main>
+  </div>
+
+  <script src="/app.js"></script>
+</body>
+</html>
