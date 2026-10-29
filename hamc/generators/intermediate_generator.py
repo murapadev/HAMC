@@ -17,7 +17,7 @@ class IntermediateGenerator(BaseGenerator):
             name="IntermediateGenerator"
         )
         self.margin = 1
-        self.cells = [[Cell({"Empty": 1.0}) for _ in range(self.width)] 
+        self.cells = [[Cell({"Empty": 1.0}) for _ in range(self.width)]
                      for _ in range(self.height)]
         self.initialize()
 

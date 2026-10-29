@@ -34,28 +34,31 @@ class GlobalGenerator(BaseGenerator):
         # First, ensure minimum representation of each region type
         if not self._ensure_minimum_regions():
             return False
-            
-        # Use base class collapse method for consistent backtracking
-        if not super().collapse():
-            return False
 
-        # Additional validation: ensure all required regions are present
-        regions_present = set()
-        for r in range(self.height):
-            for c in range(self.width):
-                if self.cells[r][c].collapsed_value:
-                    regions_present.add(self.cells[r][c].collapsed_value)
+        # Use base class collapse method for consistent backtracking. Note this
+        # already runs validate(), which fails if a required region is absent —
+        # so a False result here is often *recoverable* via forced placement.
+        ok = super().collapse()
 
-        # If any required region is missing, try to regenerate
+        regions_present = {
+            self.cells[r][c].collapsed_value
+            for r in range(self.height)
+            for c in range(self.width)
+            if self.cells[r][c].collapsed_value
+        }
         missing_regions = set(RegionConfig.TYPES.keys()) - regions_present
 
-        if missing_regions:
-            self.logger.warning(f"Missing required regions: {missing_regions}. Regenerating...")
-            # Reset and try again with forced placement
-            self.initialize()
-            return self._force_region_placement(missing_regions)
+        if ok and not missing_regions:
+            return True
 
-        return True
+        # Either WFC produced a map missing a required region (so validate()
+        # rejected it) or the run failed. Seed the missing regions and collapse
+        # once more. Because BaseGenerator.collapse() no longer re-initializes
+        # when cells already exist, the forced seeds now survive the retry
+        # (previously the re-init wiped them, making this branch a no-op).
+        self.logger.warning(f"Regenerating to guarantee regions; missing={missing_regions}")
+        self.initialize()
+        return self._force_region_placement(missing_regions or set(RegionConfig.TYPES.keys()))
         
     def _ensure_minimum_regions(self) -> bool:
         """Ensure minimum representation of each region type before collapse."""
