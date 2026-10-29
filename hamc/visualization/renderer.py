@@ -5,31 +5,31 @@ from ..config.tile_config import TileConfig
 class MapRenderer:
     """Renderer for visualizing different levels of the HAMC map."""
     
-    # Color mapping for global regions
+    # Colours kept in sync with the dashboard palette so PNG exports and the
+    # live UI render the same scenery.
     REGION_COLORS = {
-        "forest":   (34, 139, 34),    # Forest Green
-        "desert": (238, 214, 175),  # Sand
-        "city":   (128, 128, 128),  # Gray
-        "None":     (0, 0, 0),        # Black
-        "ERROR":    (255, 0, 0)       # Red
+        "forest": (52, 138, 78),
+        "desert": (224, 198, 142),
+        "city":   (132, 138, 152),
+        "None":   (16, 22, 30),
+        "ERROR":  (220, 60, 80),
     }
 
-    # Color mapping for intermediate blocks (using representative colors)
     BLOCK_COLORS = {
-        "grove":        (0, 100, 0),      # Dark Green
-        "clearing":     (124, 252, 0),     # Lawn Green
-        "river":        (0, 191, 255),     # Deep Sky Blue
-        "sand":         (238, 214, 175),   # Sand
-        "oasis":        (32, 178, 170),    # Light Sea Green
-        "residential":  (139, 69, 19),     # Saddle Brown
-        "commercial":   (176, 224, 230),   # Powder Blue
-        "industrial":   (192, 192, 192),   # Silver
-        "road":         (70, 70, 70),      # Dark Gray
-        "scrubland":    (154, 205, 50),    # Yellow Green
-        "periurban":    (169, 169, 169),   # Dark Gray
-        "village":      (205, 133, 63),    # Peru
-        "None":         (0, 0, 0),         # Black
-        "ERROR":        (255, 0, 0)        # Red
+        "grove":       (33, 110, 50),
+        "clearing":    (124, 198, 73),
+        "river":       (76, 175, 230),
+        "sand":        (224, 198, 142),
+        "oasis":       (60, 158, 130),
+        "residential": (172, 70, 56),
+        "commercial":  (170, 210, 230),
+        "industrial":  (170, 175, 182),
+        "road":        (62, 62, 70),
+        "scrubland":   (154, 195, 90),
+        "periurban":   (148, 152, 158),
+        "village":     (180, 132, 80),
+        "None":        (16, 22, 30),
+        "ERROR":       (220, 60, 80),
     }
 
     def __init__(self, tile_size: int = 20, padding: int = 1):

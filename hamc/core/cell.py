@@ -58,23 +58,20 @@ class Cell:
     
     def entropy(self, temperature: float = 1.0) -> float:
         """Calculate the entropy of the cell's possible values.
-        
-        Args:
-            temperature: Temperature parameter for entropy calculation
-            
+
         Returns:
             float: Shannon entropy of possible values, -1 if collapsed, or inf if no valid options
         """
         if self.collapsed_value is not None:
             return -1
-        
+
         entropy_value = shannon_entropy(self.possible)
-        self.entropy_history.append(entropy_value)
-        
-        # Keep history size reasonable
-        if len(self.entropy_history) > 10:
-            self.entropy_history = self.entropy_history[-10:]
-            
+
+        if not self.entropy_history or abs(entropy_value - self.entropy_history[-1]) > 1e-9:
+            self.entropy_history.append(entropy_value)
+            if len(self.entropy_history) > 10:
+                self.entropy_history = self.entropy_history[-10:]
+
         return entropy_value
     
     def collapse(self, 
@@ -143,11 +140,14 @@ class Cell:
             if value:
                 neighbor_counts[value] = neighbor_counts.get(value, 0) + 1
         
-        # Boost weights of values that appear in neighbors
+        # Boost weights of values that appear in neighbors. A stronger pull
+        # (0.7 per neighbour) makes the generator carve out cohesive clusters
+        # instead of speckled noise. We also reward exact matches with a small
+        # extra boost when two neighbours agree.
         for option in list(adjusted.keys()):
-            # Similarity boost for values that match neighbors
-            if option in neighbor_counts:
-                adjusted[option] *= 1.0 + (neighbor_counts[option] * 0.2)
+            n = neighbor_counts.get(option, 0)
+            if n:
+                adjusted[option] *= 1.0 + (n * 0.7) + (0.3 if n >= 2 else 0.0)
         
         return adjusted
     

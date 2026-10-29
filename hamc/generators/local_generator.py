@@ -77,29 +77,36 @@ class LocalGenerator(BaseGenerator):
                 }
 
     def _init_road(self) -> None:
-        """Initialize road with asphalt in center row."""
-        config = get_generator_config()
-        center = self.height // 2
-        
-        # Force road tiles if connecting to other roads
-        if self.neighbors.get('left') == 'road':
-            self.cells[center][0].possible = {
-                "Asfalto": config.local_road_asphalt_probability, 
-                "Linea": config.local_road_line_probability
-            }
-        if self.neighbors.get('right') == 'road':
-            self.cells[center][-1].possible = {
-                "Asfalto": config.local_road_asphalt_probability, 
-                "Linea": config.local_road_line_probability
-            }
-            
-        # Increase road probability in center row
-        for col in range(self.width):
-            if not self.cells[center][col].collapsed_value:
-                self.cells[center][col].possible = {
-                    "Asfalto": config.local_road_network_asphalt_probability, 
-                    "Linea": config.local_road_network_line_probability
-                }
+        """Initialize a road block with an asphalt cross + sidewalks.
+
+        The carriageway is laid along the centre row and column whenever a
+        matching neighbouring block calls for it, so connected road blocks
+        form continuous streets and intersections. The remaining rows act
+        as sidewalks (Acera) with occasional kerb (Bordillo).
+        """
+        cr = self.height // 2
+        cc = self.width // 2
+
+        horizontal = self.neighbors.get('left') == 'road' or self.neighbors.get('right') == 'road' or not self.neighbors
+        vertical = self.neighbors.get('top') == 'road' or self.neighbors.get('bottom') == 'road'
+
+        for r in range(self.height):
+            for c in range(self.width):
+                on_h = horizontal and r == cr
+                on_v = vertical and c == cc
+                if on_h or on_v:
+                    if on_h and on_v:
+                        # Intersection: pure asphalt with a crosswalk hint
+                        self.cells[r][c].possible = {"Asfalto": 0.7, "Paso_cebra": 0.3}
+                    else:
+                        self.cells[r][c].possible = {"Asfalto": 0.65, "Linea": 0.35}
+                else:
+                    # Sidewalk margin: edges get kerb + acera, the rest plain acera
+                    edge = (r == 0 or r == self.height - 1 or c == 0 or c == self.width - 1)
+                    if edge:
+                        self.cells[r][c].possible = {"Acera": 0.55, "Bordillo": 0.3, "Farola": 0.15}
+                    else:
+                        self.cells[r][c].possible = {"Acera": 0.6, "Cesped_urbano": 0.4}
 
     def _init_oasis(self) -> None:
         """Initialize oasis with water probability distribution."""
@@ -144,30 +151,58 @@ class LocalGenerator(BaseGenerator):
                         self.cells[r][c].possible = {"Agua": 1.0}
 
     def _init_building(self) -> None:
-        """Initialize building blocks with structure constraints."""
-        # Set border cells to walls
-        for r in range(self.height):
+        """Lay out a building footprint with a roof, windows and an entrance.
+
+        Layout (h, w with row 0 at the top):
+          row 0       : roof tiles (Tejado), sometimes Chimenea on residential
+          rows 1..h-2 : facade — Pared with Ventana/Escaparate slots
+          row h-1     : ground floor — Puerta centred, the rest is Pared/
+                        Acera depending on block type
+        """
+        H, W = self.height, self.width
+        cx = W // 2
+
+        # Roof
+        for c in range(W):
+            roof = {"Tejado": 0.8, "Pared": 0.2}
+            if self.block_type == "residential" and c == cx:
+                roof = {"Chimenea": 0.6, "Tejado": 0.4}
+            self.cells[0][c].possible = roof
+
+        # Vertical walls
+        for r in range(1, H - 1):
             self.cells[r][0].possible = {"Pared": 1.0}
             self.cells[r][-1].possible = {"Pared": 1.0}
-        for c in range(self.width):
-            self.cells[0][c].possible = {"Pared": 1.0}
-            self.cells[-1][c].possible = {"Pared": 1.0}
-            
-        if self.block_type == "residential":
-            # Add door in middle of one wall
-            center = self.width // 2
-            self.cells[-1][center].possible = {"Puerta": 1.0}
-            
-        elif self.block_type in {"commercial", "comercial"}:
-            # Add display windows on ground floor
-            for c in range(1, self.width-1):
-                self.cells[-1][c].possible = {"Escaparate": 0.7, "Ventana": 0.3}
-                
-        elif self.block_type == "industrial":
-            # Large sections of industrial materials
-            for r in range(1, self.height-1):
-                for c in range(1, self.width-1):
-                    self.cells[r][c].possible = {"Metal": 0.6, "Hormigón": 0.4}
+
+        # Facade interior: a window grid
+        for r in range(1, H - 1):
+            for c in range(1, W - 1):
+                if self.block_type == "industrial":
+                    self.cells[r][c].possible = {
+                        "Hormigón": 0.45, "Metal": 0.35, "Tubería": 0.15, "Ventana": 0.05,
+                    }
+                elif self.block_type == "commercial":
+                    self.cells[r][c].possible = {
+                        "Ventana": 0.55, "Pared": 0.25, "Escaparate": 0.20,
+                    }
+                else:  # residential
+                    self.cells[r][c].possible = {
+                        "Ventana": 0.5, "Pared": 0.35, "Suelo_madera": 0.15,
+                    }
+
+        # Ground floor
+        for c in range(W):
+            if c == cx:
+                self.cells[-1][c].possible = {"Puerta": 1.0}
+            elif c == 0 or c == W - 1:
+                self.cells[-1][c].possible = {"Pared": 1.0}
+            else:
+                if self.block_type == "commercial":
+                    self.cells[-1][c].possible = {"Escaparate": 0.6, "Ventana": 0.25, "Acera": 0.15}
+                elif self.block_type == "industrial":
+                    self.cells[-1][c].possible = {"Hormigón": 0.5, "Metal": 0.5}
+                else:
+                    self.cells[-1][c].possible = {"Pared": 0.55, "Ventana": 0.3, "Acera": 0.15}
 
     def _collapse_strategic_cells(self) -> None:
         """Collapse strategic cells based on block type."""
