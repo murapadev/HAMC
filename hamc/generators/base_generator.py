@@ -3,7 +3,6 @@ from typing import List, Tuple, Dict, Optional
 import logging
 from ..core.cell import Cell
 from ..core.generator_state import GeneratorState, GeneratorStatus
-from ..core.compatibility_cache import CompatibilityCache
 from ..core.backtrack_manager import BacktrackManager
 
 class BaseGenerator(ABC):
@@ -14,7 +13,6 @@ class BaseGenerator(ABC):
         self.height = height
         self.cells: List[List[Cell]] = []
         self.state = GeneratorState(name)
-        self.cache = CompatibilityCache()
         self.backtrack_manager = BacktrackManager()
         self.logger = logging.getLogger(name)
         
