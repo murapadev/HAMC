@@ -4,7 +4,7 @@
   <a href="https://github.com/murapadev/HAMC"><img alt="Repo" src="https://img.shields.io/badge/repo-murapadev%2Fhamc-24292e?logo=github&logoColor=white"></a>
   <a href="LICENSE"><img alt="License" src="https://img.shields.io/github/license/murapadev/HAMC?color=blue"></a>
   <img alt="Python" src="https://img.shields.io/badge/python-3.9%2B-3776AB?logo=python&logoColor=white">
-  <img alt="Tests" src="https://img.shields.io/badge/tests-68%20passing-brightgreen?logo=pytest">
+  <img alt="Tests" src="https://img.shields.io/badge/tests-29%20passing-brightgreen?logo=pytest">
   <a href="https://github.com/murapadev/HAMC/stargazers"><img alt="Stars" src="https://img.shields.io/github/stars/murapadev/HAMC?style=social"></a>
 </p>
 
@@ -47,14 +47,14 @@ Core ideas: weighted choices, entropy-based cell selection, constraint propagati
 - dashboard.py — live dashboard server (SSE)
 - dashboard_static/ — dashboard frontend (HTML/CSS/JS)
 - hamc/
-  - config/ — configuration files
-  - core/ — cell, entropy, backtracking, validators
+  - config/ — regions, blocks, tiles (weights, compatibility, colours) and tunable constants
+  - core/ — cell, entropy, backtracking, validators, generator state
   - generators/ — global, intermediate, local generators
   - visualization/ — rendering utilities
 - tests/ — unit tests
-- run_tests.py — test runner
-
-For a full tree see the original README in the repo.
+- run_tests.py — test runner (pytest + coverage)
+- docs/AUDITORIA.md — code audit that motivated the current simplification
+- Makefile — `make demo`, `make dashboard`, `make test`
 
 ## Quickstart
 
@@ -135,15 +135,23 @@ G.collapse()
 
 ## Configuration
 
-All constants and profiles live in hamc/config/. The project supports profile-based JSON configs (development, production, testing) and a runtime loader at hamc.config.advanced_config.
+Everything is plain Python in hamc/config/:
+
+- region_config.py, block_config.py, tile_config.py — option weights, adjacency
+  graphs (made symmetric at import time) and colours for each level.
+- advanced_config.py — a few tunable probabilities for local generation and
+  validation, exposed through `get_generator_config()` / `get_validator_config()`.
+
+There is no profile system or config file loader; edit the values directly.
 
 ## Running tests
 
 ```bash
-python run_tests.py
+python run_tests.py      # or: make test, or: pytest tests
 ```
 
-Tests cover entropy, compatibility, path validation, and propagation/backtracking behavior.
+Tests cover entropy, compatibility, path validation, propagation/backtracking,
+seed reproducibility, the audit regressions and the dashboard request limits.
 
 ## Contributing
 
