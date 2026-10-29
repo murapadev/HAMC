@@ -2,7 +2,6 @@ from typing import List, Dict
 from ..core.cell import Cell
 from ..config.region_config import RegionConfig
 from .base_generator import BaseGenerator
-from ..config.advanced_config import get_generator_config
 
 
 class GlobalGenerator(BaseGenerator):
@@ -63,7 +62,6 @@ class GlobalGenerator(BaseGenerator):
     def _ensure_minimum_regions(self) -> bool:
         """Ensure minimum representation of each region type before collapse."""
         try:
-            config = get_generator_config()
             # For small grids, ensure at least one cell per region type
             if self.width * self.height < len(RegionConfig.TYPES):
                 self.logger.warning("Grid too small for all region types")
