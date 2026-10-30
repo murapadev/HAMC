@@ -85,6 +85,14 @@ class TileConfig:
             ("Farola",     0.04),
         ],
 
+        "park": [
+            ("Cesped_urbano", 0.45),
+            ("Árbol",         0.25),
+            ("Sendero",       0.15),
+            ("Flores",        0.10),
+            ("Farola",        0.05),
+        ],
+
         # Transitions ---------------------------------------------------------
         "scrubland": [
             ("Arbusto", 0.30),
@@ -116,7 +124,8 @@ class TileConfig:
     # Tiles not appearing in this map cannot be placed next to anything.
     COMPATIBILITY: Dict[str, Set[str]] = {
         # Forest --------------------------------------------------------------
-        "Árbol":      {"Árbol", "Hierba", "Musgo", "Helecho", "Hojas", "Tronco"},
+        "Árbol":      {"Árbol", "Hierba", "Musgo", "Helecho", "Hojas", "Tronco",
+                       "Cesped_urbano", "Sendero", "Flores"},
         "Hierba":     {"Árbol", "Hierba", "Flores", "Agua", "Arena", "Piedra",
                        "Arbusto", "Musgo", "Helecho", "Sendero", "Tocón",
                        "Tierra", "Cesped_urbano", "Junco", "Palmera"},

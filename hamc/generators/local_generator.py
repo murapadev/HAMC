@@ -1,8 +1,9 @@
 import random
-from typing import Dict, Optional, Set
+from typing import Dict, Mapping, Optional, Set
 
 from ..config.advanced_config import get_generator_config
 from ..config.tile_config import TileConfig
+from ..config.weights import merge_weights
 from ..core.cell import Cell
 from ..core.validator import PathValidator, edge_anchor, network_connections
 from .base_generator import BaseGenerator
@@ -24,9 +25,14 @@ class LocalGenerator(BaseGenerator):
     attempts = 25
 
     def __init__(self, block_type: str, size: int, neighbors: Optional[Dict[str, str]] = None,
-                 rng: Optional[random.Random] = None):
+                 rng: Optional[random.Random] = None, weights: Optional[Mapping[str, float]] = None):
+        """``weights`` overrides the tile palette of ``block_type``. Blocks
+        built from a layout (rivers, roads, oases, buildings) set most of
+        their cells explicitly, so palette weights mainly affect the others."""
         super().__init__(size, size, name=f"LocalGenerator_{block_type}", rng=rng)
         self.block_type = block_type
+        self.palette = merge_weights(TileConfig.get_tiles_for_block(block_type), weights,
+                                     TileConfig.COMPATIBILITY, f"tile for block {block_type!r}")
         self.neighbors = neighbors or {}
         self.validator = PathValidator()
         self.attempts_used = 0
@@ -39,7 +45,7 @@ class LocalGenerator(BaseGenerator):
     # -- layouts -------------------------------------------------------------
 
     def initialize(self) -> bool:
-        tiles = TileConfig.get_tiles_for_block(self.block_type)
+        tiles = self.palette
         if not tiles:
             self.logger.error("No tiles defined for block type %s", self.block_type)
             return False
@@ -155,7 +161,7 @@ class LocalGenerator(BaseGenerator):
 
     def _apply_border_constraints(self) -> None:
         """Keep edge tiles that can touch some tile of the neighbouring block."""
-        own = TileConfig.get_tiles_for_block(self.block_type)
+        own = self.palette
         for side, neighbour_type in sorted(self.neighbors.items()):
             theirs = TileConfig.get_tiles_for_block(neighbour_type)
             if not theirs:

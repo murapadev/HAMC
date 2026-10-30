@@ -25,6 +25,7 @@ class MapRenderer:
         "commercial":  (170, 210, 230),
         "industrial":  (170, 175, 182),
         "road":        (62, 62, 70),
+        "park":        (96, 170, 84),
         "scrubland":   (154, 195, 90),
         "periurban":   (148, 152, 158),
         "village":     (180, 132, 80),

@@ -6,8 +6,10 @@ import json
 import random
 import time
 from dataclasses import asdict, dataclass, field
-from typing import Any, Callable, Dict, List, Optional
+from typing import Any, Callable, Dict, List, Mapping, Optional
 
+from .config.tile_config import TileConfig
+from .generators.base_generator import CellRule
 from .generators.global_generator import GlobalGenerator
 from .generators.intermediate_generator import IntermediateGenerator
 from .generators.local_generator import LocalGenerator
@@ -90,6 +92,11 @@ def generate_map(
     step_delay: float = 0.0,
     cancel: Optional[Callable[[], bool]] = None,
     strict: bool = True,
+    region_weights: Optional[Mapping[str, float]] = None,
+    block_weights: Optional[Mapping[str, Mapping[str, float]]] = None,
+    tile_weights: Optional[Mapping[str, Mapping[str, float]]] = None,
+    constrain_regions: Optional[Callable[[int, int], CellRule]] = None,
+    constrain_blocks: Optional[Callable[[int, int, str], CellRule]] = None,
 ) -> HAMCMap:
     """Generate a full map.
 
@@ -105,6 +112,18 @@ def generate_map(
     (``global``, ``intermediate`` or ``local``) plus the pipeline events
     ``local_init``, ``local_block_start`` and ``local_block_complete``.
 
+    Customisation (unknown names raise ``ValueError``):
+
+    - ``region_weights``: ``{"forest": 0.6, ...}`` overrides region weights.
+    - ``block_weights``: ``{"city": {"park": 0.4}}`` overrides block weights
+      per region (a block from another region may be added).
+    - ``tile_weights``: ``{"grove": {"Árbol": 0.9}}`` overrides a block's tile
+      palette.
+    - ``constrain_regions(row, col)`` / ``constrain_blocks(row, col, region)``
+      return, per cell, ``None`` (free), a value to force, a set of allowed
+      values or a ``{value: weight}`` dict. Forcing a value the layer can't
+      hold there (a park outside a city) raises ``ValueError``.
+
     With ``strict`` (the default) any layer or block that fails validation
     raises :class:`GenerationError`; otherwise the map is returned with
     ``valid=False`` and the problems listed in ``issues``.
@@ -115,6 +134,10 @@ def generate_map(
         raise ValueError(
             f"local must be >= {MIN_LOCAL} (got {local}): a building block needs a roof row, "
             "a facade row and a ground floor with a door")
+    tile_weights = dict(tile_weights or {})
+    unknown = set(tile_weights) - set(TileConfig.BLOCK_TO_TILES)
+    if unknown:
+        raise ValueError(f"unknown block(s) in tile_weights: {sorted(unknown)}")
     issues: List[str] = []
     timings: Dict[str, float] = {}
 
@@ -130,7 +153,8 @@ def generate_map(
     rng = random.Random(seed)
 
     t0 = time.perf_counter()
-    G = GlobalGenerator(width, height, rng=rng)
+    G = GlobalGenerator(width, height, rng=rng, weights=region_weights,
+                        constraint=constrain_regions)
     G.set_observer(_tagged(observer, level="global"), step_delay=step_delay)
     G.initialize()
     if not G.collapse():
@@ -140,7 +164,8 @@ def generate_map(
     check_cancel()
 
     t0 = time.perf_counter()
-    I = IntermediateGenerator(G, subgrid_size=subgrid, rng=rng)
+    I = IntermediateGenerator(G, subgrid_size=subgrid, rng=rng, weights=block_weights,
+                              constraint=constrain_blocks)
     I.set_observer(_tagged(observer, level="intermediate"), step_delay=step_delay * 0.6)
     if not I.collapse():
         issues.append("intermediate layer failed validation")
@@ -162,7 +187,8 @@ def generate_map(
             btype = blocks[br][bc]
             base = [br * local, bc * local]
             relay = _tagged(observer, level="local", br=br, bc=bc, base=base)
-            LG = LocalGenerator(btype, local, block_neighbors(blocks, br, bc), rng=rng)
+            LG = LocalGenerator(btype, local, block_neighbors(blocks, br, bc), rng=rng,
+                                weights=tile_weights.get(btype))
             if relay:
                 # Re-announce the block on every attempt so a live view can
                 # reset it when a failed attempt is discarded.

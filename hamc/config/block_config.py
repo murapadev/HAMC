@@ -16,10 +16,11 @@ class BlockConfig:
             ("river", 0.1)
         ],
         "city": [
-            ("residential", 0.4),
-            ("commercial", 0.3),
-            ("industrial", 0.2),
-            ("road", 0.1)
+            ("residential", 0.35),
+            ("commercial", 0.25),
+            ("industrial", 0.15),
+            ("road", 0.15),
+            ("park", 0.1),
         ]
     }
 
@@ -46,10 +47,11 @@ class BlockConfig:
         "river": {"grove", "clearing", "sand", "oasis", "river", "periurban"},
         "sand": {"sand", "oasis", "river", "scrubland", "village"},
         "oasis": {"oasis", "sand", "river", "scrubland"},
-        "residential": {"residential", "commercial", "road", "periurban", "village"},
-        "commercial": {"residential", "commercial", "industrial", "road", "periurban", "village"},
+        "residential": {"residential", "commercial", "road", "periurban", "village", "park"},
+        "commercial": {"residential", "commercial", "industrial", "road", "periurban", "village", "park"},
         "industrial": {"commercial", "industrial", "road", "periurban", "village"},
-        "road": {"road", "residential", "commercial", "industrial", "periurban", "village"},
+        "road": {"road", "residential", "commercial", "industrial", "periurban", "village", "park"},
+        "park": {"park", "periurban"},
         # Transition blocks also meet each other where three regions touch.
         "scrubland": {"grove", "clearing", "sand", "oasis", "periurban", "scrubland", "river", "village"},
         "periurban": {"grove", "residential", "commercial", "industrial", "road", "scrubland",

@@ -1,9 +1,10 @@
 import random
-from typing import Dict, Optional, Set
+from typing import Callable, Dict, Mapping, Optional, Set
 
 from ..config.block_config import BlockConfig
+from ..config.weights import merge_weights
 from ..core.cell import Cell
-from .base_generator import BaseGenerator
+from .base_generator import BaseGenerator, CellRule
 from .global_generator import GlobalGenerator
 
 _STEPS = ((0, 1), (1, 0), (0, -1), (-1, 0))
@@ -22,9 +23,22 @@ class IntermediateGenerator(BaseGenerator):
     attempts = 5
 
     def __init__(self, global_gen: GlobalGenerator, subgrid_size: int = 3,
-                 rng: Optional[random.Random] = None):
+                 rng: Optional[random.Random] = None,
+                 weights: Optional[Mapping[str, Mapping[str, float]]] = None,
+                 constraint: Optional[Callable[[int, int, str], CellRule]] = None):
+        """``weights`` maps a region to block weight overrides; ``constraint``
+        is called as ``constraint(row, col, region)`` for every block cell."""
         self.subgrid_size = subgrid_size
         self.global_gen = global_gen
+        self.constraint = constraint
+        self.region_blocks = {
+            region: merge_weights(BlockConfig.get_blocks_for_region(region), (weights or {}).get(region),
+                                  BlockConfig.COMPATIBILITY, f"block for region {region!r}")
+            for region in BlockConfig.REGION_TO_BLOCKS
+        }
+        unknown = set(weights or {}) - set(self.region_blocks)
+        if unknown:
+            raise ValueError(f"unknown region(s) in block weights: {sorted(unknown)}")
         super().__init__(global_gen.width * subgrid_size, global_gen.height * subgrid_size,
                          name="IntermediateGenerator", rng=rng or global_gen.rng)
         self.initialize()
@@ -38,7 +52,7 @@ class IntermediateGenerator(BaseGenerator):
     def allowed_blocks(self, r: int, c: int) -> Dict[str, float]:
         """Block weights admissible at intermediate cell ``(r, c)``."""
         region = self.region_at(r, c)
-        options = BlockConfig.get_blocks_for_region(region)
+        options = {b: w for b, w in self.region_blocks.get(region, {}).items() if w > 0}
         gr, gc = r // self.subgrid_size, c // self.subgrid_size
         s = self.subgrid_size
         for dr, dc in _STEPS:
@@ -64,6 +78,10 @@ class IntermediateGenerator(BaseGenerator):
                     return False
         self.cells = [[Cell(self.allowed_blocks(r, c)) for c in range(self.width)]
                       for r in range(self.height)]
+        if self.constraint:
+            for r in range(self.height):
+                for c in range(self.width):
+                    self._apply_rule(r, c, self.constraint(r, c, self.region_at(r, c)))
         return True
 
     def collapse(self) -> bool:

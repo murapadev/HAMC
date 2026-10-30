@@ -4,12 +4,16 @@ import random
 import time
 from abc import ABC, abstractmethod
 from collections import deque
-from typing import Any, Callable, Dict, List, Optional, Set, Tuple
+from typing import Any, Callable, Dict, Iterable, List, Mapping, Optional, Set, Tuple, Union
 
 from ..core.cell import Cell
 from ..core.generator_state import GeneratorState, GeneratorStatus
 
 Observer = Callable[[Dict[str, Any]], None]
+#: What a constraint returns for one cell: ``None`` (no constraint), a value
+#: to force, an iterable of allowed values or a ``{value: weight}`` dict that
+#: restricts and reweights the cell.
+CellRule = Union[None, str, Iterable[str], Mapping[str, float]]
 
 _EMPTY: Set[str] = frozenset()
 _DIRECTIONS = (("top", -1, 0), ("bottom", 1, 0), ("left", 0, -1), ("right", 0, 1))
@@ -67,6 +71,25 @@ class BaseGenerator(ABC):
     @abstractmethod
     def compatibility(self) -> Dict[str, Set[str]]:
         """Symmetric adjacency table: value -> values allowed next to it."""
+
+    # -- user constraints ------------------------------------------------------
+
+    def _apply_rule(self, r: int, c: int, rule: CellRule) -> None:
+        """Narrow cell ``(r, c)`` to what ``rule`` allows (see :data:`CellRule`)."""
+        if rule is None:
+            return
+        cell = self.cells[r][c]
+        if isinstance(rule, str):
+            kept = {rule: cell.possible[rule]} if rule in cell.possible else {}
+        elif isinstance(rule, Mapping):
+            kept = {v: float(w) for v, w in rule.items() if v in cell.possible and w > 0}
+        else:
+            allowed = set(rule)
+            kept = {v: w for v, w in cell.possible.items() if v in allowed}
+        if not kept:
+            raise ValueError(f"{self.name}: constraint {rule!r} at ({r}, {c}) leaves no option; "
+                             f"allowed there: {sorted(cell.possible)}")
+        cell.possible = kept
 
     # -- observer ------------------------------------------------------------
 

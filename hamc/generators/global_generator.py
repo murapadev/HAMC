@@ -1,9 +1,10 @@
 import random
-from typing import Dict, Optional, Set
+from typing import Callable, Dict, Mapping, Optional, Set
 
 from ..config.region_config import RegionConfig
+from ..config.weights import merge_weights
 from ..core.cell import Cell
-from .base_generator import BaseGenerator
+from .base_generator import BaseGenerator, CellRule
 
 
 class GlobalGenerator(BaseGenerator):
@@ -16,7 +17,9 @@ class GlobalGenerator(BaseGenerator):
 
     attempts = 5
 
-    def __init__(self, width: int, height: int, rng: Optional[random.Random] = None):
+    def __init__(self, width: int, height: int, rng: Optional[random.Random] = None,
+                 weights: Optional[Mapping[str, float]] = None,
+                 constraint: Optional[Callable[[int, int], CellRule]] = None):
         required = len(RegionConfig.TYPES)
         if width < 1 or height < 1 or width * height < required:
             raise ValueError(
@@ -24,13 +27,18 @@ class GlobalGenerator(BaseGenerator):
                 f"needs all {required} region types ({', '.join(RegionConfig.TYPES)}); "
                 f"use at least {required} cells, e.g. width={required} height=1")
         super().__init__(width, height, name="GlobalGenerator", rng=rng)
+        self.weights = merge_weights(RegionConfig.get_probabilities(), weights, RegionConfig.TYPES, "region")
+        self.constraint = constraint
 
     def compatibility(self) -> Dict[str, Set[str]]:
         return {name: set(cfg["can_adjacent"]) for name, cfg in RegionConfig.TYPES.items()}
 
     def initialize(self) -> bool:
-        probs = RegionConfig.get_probabilities()
-        self.cells = [[Cell(dict(probs)) for _ in range(self.width)] for _ in range(self.height)]
+        self.cells = [[Cell(dict(self.weights)) for _ in range(self.width)] for _ in range(self.height)]
+        if self.constraint:
+            for r in range(self.height):
+                for c in range(self.width):
+                    self._apply_rule(r, c, self.constraint(r, c))
         return True
 
     def collapse(self) -> bool:
@@ -44,14 +52,19 @@ class GlobalGenerator(BaseGenerator):
             if super().collapse():
                 return True
 
-        missing = sorted(set(RegionConfig.TYPES) - self._present())
-        self.logger.warning("Seeding missing regions after %d attempts: %s", self.attempts, missing)
+        # Plain WFC keeps missing a region: seed one cell of every region
+        # that isn't pre-seeded, then collapse the rest around them.
+        missing = sorted(set(RegionConfig.TYPES) - set(seeded.values()))
+        self.logger.info("No complete map after %d attempts; seeding regions %s", self.attempts, missing)
         self._reset(seeded)
         free = [(r, c) for r in range(self.height) for c in range(self.width) if (r, c) not in seeded]
         self.rng.shuffle(free)
-        for region, (r, c) in zip(sorted(RegionConfig.TYPES), free):
-            if region not in seeded.values():
-                self.cells[r][c].possible = {region: 1.0}
+        for region in missing:
+            spot = next(((r, c) for r, c in free if region in self.cells[r][c].possible), None)
+            if spot is None:
+                raise ValueError(f"weights/constraints leave no cell where region {region!r} can go")
+            free.remove(spot)
+            self._apply_rule(*spot, region)
         return super().collapse()
 
     def _reset(self, seeded: Dict) -> None:
