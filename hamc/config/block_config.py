@@ -1,10 +1,10 @@
-from typing import Dict, Set, List, Tuple
+
 
 class BlockConfig:
     """Configuration for intermediate level blocks."""
-    
+
     # Region to block mappings
-    REGION_TO_BLOCKS: Dict[str, List[Tuple[str, float]]] = {
+    REGION_TO_BLOCKS: dict[str, list[tuple[str, float]]] = {
         "forest": [
             ("grove", 0.6),
             ("clearing", 0.3),
@@ -25,7 +25,7 @@ class BlockConfig:
     }
 
     # Transition blocks between regions
-    TRANSITIONS: Dict[str, Dict[str, Tuple[str, float]]] = {
+    TRANSITIONS: dict[str, dict[str, tuple[str, float]]] = {
         "forest": {
             "desert": ("scrubland", 0.8),
             "city": ("periurban", 0.8)
@@ -41,7 +41,7 @@ class BlockConfig:
     }
 
     # Block compatibility rules
-    COMPATIBILITY: Dict[str, Set[str]] = {
+    COMPATIBILITY: dict[str, set[str]] = {
         "grove": {"grove", "clearing", "river", "scrubland", "periurban"},
         "clearing": {"grove", "clearing", "river", "scrubland", "periurban"},
         "river": {"grove", "clearing", "sand", "oasis", "river", "periurban"},
@@ -62,16 +62,16 @@ class BlockConfig:
     }
 
     @classmethod
-    def get_blocks_for_region(cls, region: str) -> Dict[str, float]:
+    def get_blocks_for_region(cls, region: str) -> dict[str, float]:
         """Get block distribution for a region."""
         if region not in cls.REGION_TO_BLOCKS:
             return {}
         return {block: weight for block, weight in cls.REGION_TO_BLOCKS[region]}
 
     @classmethod
-    def get_transition(cls, region1: str, region2: str) -> Tuple[str, float]:
+    def get_transition(cls, region1: str, region2: str) -> tuple[str, float]:
         """Get transition block between two regions."""
-        if (region1 in cls.TRANSITIONS and 
+        if (region1 in cls.TRANSITIONS and
             region2 in cls.TRANSITIONS[region1]):
             return cls.TRANSITIONS[region1][region2]
         return ("", 0.0)
@@ -86,7 +86,7 @@ class BlockConfig:
         return block2 in cls.COMPATIBILITY[block1] and block1 in cls.COMPATIBILITY[block2]
 
 
-def _symmetrize(graph: Dict[str, Set[str]]) -> None:
+def _symmetrize(graph: dict[str, set[str]]) -> None:
     """Add the reverse edge for every adjacency so the graph is symmetric.
 
     The compatibility tables are hand-written and drifted out of symmetry over

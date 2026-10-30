@@ -7,7 +7,6 @@ import json
 import logging
 import os
 import sys
-from typing import Dict, List, Optional, Tuple
 
 from . import __version__
 from .pipeline import GenerationError, HAMCMap, generate_map
@@ -29,7 +28,7 @@ def _generate(ns: argparse.Namespace) -> HAMCMap:
     return generate_map(ns.width, ns.height, ns.subgrid, ns.local, seed=ns.seed)
 
 
-def write_layers(hmap: HAMCMap, out_dir: str) -> Dict[str, str]:
+def write_layers(hmap: HAMCMap, out_dir: str) -> dict[str, str]:
     """Write the three layers as flat-colour PNGs plus ``map.json``."""
     from .visualization.renderer import MapRenderer
 
@@ -43,7 +42,7 @@ def write_layers(hmap: HAMCMap, out_dir: str) -> Dict[str, str]:
             intermediate_size=(hmap.height * hmap.subgrid, hmap.width * hmap.subgrid)),
         "final_tilemap_clean": renderer.render_complete_tilemap(hmap.tilemap),
     }
-    paths: Dict[str, str] = {}
+    paths: dict[str, str] = {}
     for name, img in images.items():
         paths[name] = os.path.join(out_dir, f"{name}.png")
         img.save(paths[name])
@@ -66,7 +65,7 @@ def cmd_generate(ns: argparse.Namespace) -> int:
     return 0
 
 
-def _parse_size(text: str) -> Tuple[int, int]:
+def _parse_size(text: str) -> tuple[int, int]:
     try:
         w, h = (int(v) for v in text.lower().split("x"))
     except ValueError:
@@ -133,7 +132,7 @@ def build_parser() -> argparse.ArgumentParser:
     return parser
 
 
-def main(argv: Optional[List[str]] = None) -> int:
+def main(argv: list[str] | None = None) -> int:
     ns = build_parser().parse_args(argv)
     logging.basicConfig(level=logging.DEBUG if ns.debug else logging.WARNING,
                         format="%(levelname)s %(name)s: %(message)s")

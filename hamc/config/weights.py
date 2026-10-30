@@ -1,10 +1,10 @@
 """Merge user weight overrides into the default tables."""
 
-from typing import Collection, Dict, Mapping, Optional
+from collections.abc import Collection, Mapping
 
 
-def merge_weights(defaults: Mapping[str, float], overrides: Optional[Mapping[str, float]],
-                  known: Collection[str], kind: str) -> Dict[str, float]:
+def merge_weights(defaults: Mapping[str, float], overrides: Mapping[str, float] | None,
+                  known: Collection[str], kind: str) -> dict[str, float]:
     """``defaults`` updated with ``overrides``.
 
     Overrides may change existing weights, add values from ``known`` or set a

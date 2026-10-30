@@ -1,5 +1,5 @@
 import random
-from typing import Dict, Mapping, Optional, Set
+from collections.abc import Mapping
 
 from ..config.advanced_config import get_generator_config
 from ..config.tile_config import TileConfig
@@ -24,8 +24,8 @@ class LocalGenerator(BaseGenerator):
     SPECIAL_BLOCK_TYPES = {"river", "road", "oasis", *BUILDING_TYPES}
     attempts = 25
 
-    def __init__(self, block_type: str, size: int, neighbors: Optional[Dict[str, str]] = None,
-                 rng: Optional[random.Random] = None, weights: Optional[Mapping[str, float]] = None):
+    def __init__(self, block_type: str, size: int, neighbors: dict[str, str] | None = None,
+                 rng: random.Random | None = None, weights: Mapping[str, float] | None = None):
         """``weights`` overrides the tile palette of ``block_type``. Blocks
         built from a layout (rivers, roads, oases, buildings) set most of
         their cells explicitly, so palette weights mainly affect the others."""
@@ -36,10 +36,10 @@ class LocalGenerator(BaseGenerator):
         self.neighbors = neighbors or {}
         self.validator = PathValidator()
         self.attempts_used = 0
-        self._allowed: Set[str] = set()
+        self._allowed: set[str] = set()
         self.initialize()
 
-    def compatibility(self) -> Dict[str, Set[str]]:
+    def compatibility(self) -> dict[str, set[str]]:
         return TileConfig.COMPATIBILITY
 
     # -- layouts -------------------------------------------------------------
@@ -67,7 +67,7 @@ class LocalGenerator(BaseGenerator):
         self._allowed = {t for row in self.cells for cell in row for t in cell.possible}
         return True
 
-    def _set(self, r: int, c: int, weights: Dict[str, float]) -> None:
+    def _set(self, r: int, c: int, weights: dict[str, float]) -> None:
         self.cells[r][c].possible = dict(weights)
 
     def _init_network(self) -> None:

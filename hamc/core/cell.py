@@ -1,5 +1,4 @@
 import random
-from typing import Dict, Optional, Set
 
 from .entropy import shannon_entropy, weighted_random_choice
 
@@ -14,15 +13,15 @@ class Cell:
 
     __slots__ = ("possible", "collapsed_value")
 
-    def __init__(self, possible_values: Dict[str, float]):
+    def __init__(self, possible_values: dict[str, float]):
         if not possible_values:
             raise ValueError("Cannot initialize cell with empty possibilities")
         if any(w < 0 for w in possible_values.values()):
             raise ValueError("All weights must be non-negative")
-        self.possible: Dict[str, float] = {k: v for k, v in possible_values.items() if v > 0}
+        self.possible: dict[str, float] = {k: v for k, v in possible_values.items() if v > 0}
         if not self.possible:
             raise ValueError("After filtering zero weights, no valid options remain")
-        self.collapsed_value: Optional[str] = None
+        self.collapsed_value: str | None = None
 
     def entropy(self) -> float:
         """Shannon entropy of the remaining options; -1 once collapsed."""
@@ -30,9 +29,9 @@ class Cell:
             return -1
         return shannon_entropy(self.possible)
 
-    def collapse(self, avoid_values: Optional[Set[str]] = None, temperature: float = 1.0,
-                 context: Optional[Dict[str, Dict[str, str]]] = None,
-                 rng: Optional[random.Random] = None) -> str:
+    def collapse(self, avoid_values: set[str] | None = None, temperature: float = 1.0,
+                 context: dict[str, dict[str, str]] | None = None,
+                 rng: random.Random | None = None) -> str:
         """Pick one value by weight (biased towards collapsed neighbours).
 
         Returns the chosen value, or ``"ERROR"`` if nothing can be chosen.
@@ -48,11 +47,11 @@ class Cell:
         return value
 
     @staticmethod
-    def _adjust_for_neighbors(options: Dict[str, float], neighbors: Dict[str, str]) -> Dict[str, float]:
+    def _adjust_for_neighbors(options: dict[str, float], neighbors: dict[str, str]) -> dict[str, float]:
         """Boost values already used by neighbours so tiles form clusters
         instead of speckled noise (+0.7 per matching neighbour, +0.3 more when
         two or more agree)."""
-        counts: Dict[str, int] = {}
+        counts: dict[str, int] = {}
         for value in neighbors.values():
             if value:
                 counts[value] = counts.get(value, 0) + 1

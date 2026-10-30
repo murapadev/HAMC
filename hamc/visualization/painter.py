@@ -16,15 +16,15 @@ grid; road blocks are drawn from their connections to neighbouring roads.
 from __future__ import annotations
 
 import random
+from collections.abc import Sequence
 from dataclasses import dataclass, field
 from functools import lru_cache
-from typing import Dict, List, Optional, Sequence, Tuple
 
 from PIL import Image, ImageDraw
 
 from ..core.validator import network_connections
 
-RGB = Tuple[int, int, int]
+RGB = tuple[int, int, int]
 Grid = Sequence[Sequence[str]]
 
 STYLES = ("topdown", "iso", "flat")
@@ -61,7 +61,7 @@ AWNINGS = [(200, 60, 60), (40, 130, 90), (40, 100, 170), (220, 150, 40)]
 CONTAINERS = [(186, 70, 50), (40, 110, 170), (60, 140, 90), (210, 160, 50)]
 
 # Ground colour of each tile, also used by the flat style.
-GROUND: Dict[str, RGB] = {
+GROUND: dict[str, RGB] = {
     "Hierba": GRASS, "Árbol": FOREST_FLOOR, "Musgo": (78, 122, 60), "Helecho": (70, 134, 76),
     "Hojas": (128, 140, 66), "Tronco": FOREST_FLOOR, "Tocón": GRASS, "Flores": GRASS,
     "Sendero": PATH, "Tierra": DIRT, "Agua": WATER, "Aguas_profundas": DEEP_WATER,
@@ -88,7 +88,7 @@ def _shade(color: RGB, factor: float) -> RGB:
 
 
 def _mix(a: RGB, b: RGB, t: float) -> RGB:
-    return tuple(int(x + (y - x) * t) for x, y in zip(a, b))  # type: ignore[return-value]
+    return tuple(int(x + (y - x) * t) for x, y in zip(a, b, strict=False))  # type: ignore[return-value]
 
 
 # -- tile textures ------------------------------------------------------------
@@ -118,7 +118,7 @@ def tile_texture(tile: str, size: int, variant: int) -> Image.Image:
             ln = max(2, s // 4)
             d.arc([x - ln, y - 2, x + ln, y + 2], 200, 340, fill=light)
     elif tile == "Duna":
-        for k in range(2):
+        for _ in range(2):
             y = rng.randrange(s // 4, s)
             d.arc([-s // 2, y - s // 3, s + s // 2, y + s // 3], 200, 340, fill=_shade(base, 0.86))
         _speckle(img, rng, base, 0.15, 0.08)
@@ -171,9 +171,9 @@ class Building:
     roof: RGB
     wall: RGB
     kind: str
-    ridge: Optional[str] = None  # "h" / "v": gable roof ridge direction
-    chimneys: List[Tuple[float, float]] = field(default_factory=list)
-    rooftop: List[Tuple[float, float, float]] = field(default_factory=list)  # AC units (x, y, size)
+    ridge: str | None = None  # "h" / "v": gable roof ridge direction
+    chimneys: list[tuple[float, float]] = field(default_factory=list)
+    rooftop: list[tuple[float, float, float]] = field(default_factory=list)  # AC units (x, y, size)
     sawtooth: bool = False
 
 
@@ -192,8 +192,8 @@ class Scene:
     height: int
     tile: int
     ground: Image.Image
-    buildings: List[Building]
-    trees: List[Tree]
+    buildings: list[Building]
+    trees: list[Tree]
 
 
 class _Builder:
@@ -206,18 +206,18 @@ class _Builder:
         self.rows, self.cols = len(tilemap), len(tilemap[0])
         self.ground = Image.new("RGBA", (self.cols * tile, self.rows * tile), GRASS + (255,))
         self.draw = ImageDraw.Draw(self.ground)
-        self.buildings: List[Building] = []
-        self.trees: List[Tree] = []
+        self.buildings: list[Building] = []
+        self.trees: list[Tree] = []
 
     def rng(self, *key: int) -> random.Random:
         return random.Random(_hash(self.seed, *key))
 
-    def block_type(self, br: int, bc: int) -> Optional[str]:
+    def block_type(self, br: int, bc: int) -> str | None:
         if 0 <= br < len(self.blocks) and 0 <= bc < len(self.blocks[0]):
             return self.blocks[br][bc]
         return None
 
-    def block_tiles(self, br: int, bc: int) -> List[List[str]]:
+    def block_tiles(self, br: int, bc: int) -> list[list[str]]:
         L = self.local
         return [row[bc * L:(bc + 1) * L] for row in self.tilemap[br * L:(br + 1) * L]]
 
@@ -332,7 +332,7 @@ class _Builder:
             d.rounded_rectangle([x + T * 0.15, cy - T * 0.12, x + T * 0.85, cy + T * 0.12],
                                 radius=max(1, T // 8), fill=(110, 76, 46))
         elif tile == "Helecho":
-            for k in range(3):
+            for _ in range(3):
                 d.line([(cx, cy), (cx + rng.uniform(-T / 3, T / 3), cy - rng.uniform(1, T / 3))], fill=(50, 110, 60))
         elif tile == "Madera":
             if rng.random() > 0.35:  # most wood tiles are fences, a few are sheds
@@ -356,7 +356,7 @@ class _Builder:
 
     # city -------------------------------------------------------------------
 
-    def street_width(self) -> Tuple[int, int]:
+    def street_width(self) -> tuple[int, int]:
         """Half street width and sidewalk width, in px."""
         T = self.T
         return max(2, round(T * 0.6)), max(1, round(T * 0.4))
@@ -515,8 +515,10 @@ class _Builder:
         for side, other in neighbours.items():
             if other in URBAN:
                 continue
-            box = {"top": [x0, y0, x0 + S - 1, y0 + sw + 1], "bottom": [x0, y0 + S - sw - 2, x0 + S - 1, y0 + S - 1],
-                   "left": [x0, y0, x0 + sw + 1, y0 + S - 1], "right": [x0 + S - sw - 2, y0, x0 + S - 1, y0 + S - 1]}[side]
+            box = {"top": [x0, y0, x0 + S - 1, y0 + sw + 1],
+                   "bottom": [x0, y0 + S - sw - 2, x0 + S - 1, y0 + S - 1],
+                   "left": [x0, y0, x0 + sw + 1, y0 + S - 1],
+                   "right": [x0 + S - sw - 2, y0, x0 + S - 1, y0 + S - 1]}[side]
             d.rectangle(box, fill=SIDEWALK, outline=CURB)
         conns = network_connections("road", {k: v for k, v in neighbours.items() if v})
         cx, cy = x0 + S / 2, y0 + S / 2
@@ -525,21 +527,20 @@ class _Builder:
         yellow = (236, 206, 92)
         ends = {"top": (cx, y0), "bottom": (cx, y0 + S), "left": (x0, cy), "right": (x0 + S, cy)}
         hub = T * 0.9
-        for side in conns:
+        for side in sorted(conns):
             ex, ey = ends[side]
+            ux, uy = (cx - ex) / (S / 2), (cy - ey) / (S / 2)  # unit step towards the centre
             steps = int(abs(ex - cx + ey - cy) // (2 * dash))
             for k in range(steps):
                 t0, t1 = k * 2 * dash, k * 2 * dash + dash
                 if t1 > S / 2 - hub:
                     break
-                fx = lambda t: ex + (cx - ex) * t / (S / 2)  # noqa: E731
-                fy = lambda t: ey + (cy - ey) * t / (S / 2)  # noqa: E731
-                d.line([(fx(t0), fy(t0)), (fx(t1), fy(t1))], fill=yellow, width=lw)
+                d.line([(ex + ux * t0, ey + uy * t0), (ex + ux * t1, ey + uy * t1)], fill=yellow, width=lw)
         if len(conns) >= 3 or (conns & {"top", "bottom"} and conns & {"left", "right"}):
             r = hub * 0.75
             d.ellipse([cx - r, cy - r, cx + r, cy + r], fill=URBAN_LAWN, outline=CURB)
             self.trees.append(Tree(cx, cy, r * 0.7, TREE))
-            for side in conns:
+            for side in sorted(conns):
                 ex, ey = ends[side]
                 mx, my = cx + (ex - cx) * 0.55, cy + (ey - cy) * 0.55
                 self.zebra(mx, my, horizontal=side in ("left", "right"), span=hw * 1.6)
@@ -675,7 +676,7 @@ def render_topdown(scene: Scene) -> Image.Image:
 
 # -- isometric ----------------------------------------------------------------
 
-def _iso(x: float, y: float, z: float, H: float) -> Tuple[float, float]:
+def _iso(x: float, y: float, z: float, H: float) -> tuple[float, float]:
     """Top-down pixel (x, y) at height z -> isometric image coordinates."""
     return x - y + H, (x + y) / 2 - z
 
@@ -693,7 +694,7 @@ def render_iso(scene: Scene) -> Image.Image:
     img.alpha_composite(ground, (0, top_margin))
     d = ImageDraw.Draw(img)
 
-    def P(x: float, y: float, z: float = 0.0) -> Tuple[float, float]:
+    def P(x: float, y: float, z: float = 0.0) -> tuple[float, float]:
         px, py = _iso(x, y, z, H)
         return px, py + top_margin
 

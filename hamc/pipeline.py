@@ -5,8 +5,9 @@ from __future__ import annotations
 import json
 import random
 import time
+from collections.abc import Callable, Mapping
 from dataclasses import asdict, dataclass, field
-from typing import Any, Callable, Dict, List, Mapping, Optional
+from typing import Any
 
 from .config.tile_config import TileConfig
 from .generators.base_generator import CellRule
@@ -14,17 +15,17 @@ from .generators.global_generator import GlobalGenerator
 from .generators.intermediate_generator import IntermediateGenerator
 from .generators.local_generator import LocalGenerator
 
-Grid = List[List[str]]
+Grid = list[list[str]]
 
 #: Smallest block side that can hold every block layout (see LocalGenerator).
 MIN_LOCAL = 3
-Observer = Callable[[Dict[str, Any]], None]
+Observer = Callable[[dict[str, Any]], None]
 
 
 class GenerationError(RuntimeError):
     """A layer could not be generated (or validated, in strict mode)."""
 
-    def __init__(self, message: str, issues: Optional[List[str]] = None):
+    def __init__(self, message: str, issues: list[str] | None = None):
         super().__init__(message)
         self.issues = issues or [message]
 
@@ -41,19 +42,19 @@ class HAMCMap:
     height: int
     subgrid: int
     local: int
-    seed: Optional[int]
+    seed: int | None
     regions: Grid
     blocks: Grid
     tilemap: Grid
     valid: bool = True
-    issues: List[str] = field(default_factory=list)
-    timings: Dict[str, float] = field(default_factory=dict)
+    issues: list[str] = field(default_factory=list)
+    timings: dict[str, float] = field(default_factory=dict)
     block_attempts: int = 0
 
-    def block_neighbors(self, r: int, c: int) -> Dict[str, str]:
+    def block_neighbors(self, r: int, c: int) -> dict[str, str]:
         return block_neighbors(self.blocks, r, c)
 
-    def to_dict(self) -> Dict[str, Any]:
+    def to_dict(self) -> dict[str, Any]:
         return asdict(self)
 
     def save_json(self, path: str) -> None:
@@ -61,9 +62,9 @@ class HAMCMap:
             json.dump(self.to_dict(), f, ensure_ascii=False)
 
 
-def block_neighbors(blocks: Grid, r: int, c: int) -> Dict[str, str]:
+def block_neighbors(blocks: Grid, r: int, c: int) -> dict[str, str]:
     """Types of the blocks around ``(r, c)``, keyed by side."""
-    out: Dict[str, str] = {}
+    out: dict[str, str] = {}
     for side, dr, dc in (("top", -1, 0), ("bottom", 1, 0), ("left", 0, -1), ("right", 0, 1)):
         nr, nc = r + dr, c + dc
         if 0 <= nr < len(blocks) and 0 <= nc < len(blocks[0]) and blocks[nr][nc]:
@@ -71,11 +72,11 @@ def block_neighbors(blocks: Grid, r: int, c: int) -> Dict[str, str]:
     return out
 
 
-def _tagged(observer: Optional[Observer], **tags: Any) -> Optional[Observer]:
+def _tagged(observer: Observer | None, **tags: Any) -> Observer | None:
     if observer is None:
         return None
 
-    def relay(event: Dict[str, Any]) -> None:
+    def relay(event: dict[str, Any]) -> None:
         event.update(tags)
         observer(event)
     return relay
@@ -87,16 +88,16 @@ def generate_map(
     subgrid: int = 2,
     local: int = 4,
     *,
-    seed: Optional[int] = None,
-    observer: Optional[Observer] = None,
+    seed: int | None = None,
+    observer: Observer | None = None,
     step_delay: float = 0.0,
-    cancel: Optional[Callable[[], bool]] = None,
+    cancel: Callable[[], bool] | None = None,
     strict: bool = True,
-    region_weights: Optional[Mapping[str, float]] = None,
-    block_weights: Optional[Mapping[str, Mapping[str, float]]] = None,
-    tile_weights: Optional[Mapping[str, Mapping[str, float]]] = None,
-    constrain_regions: Optional[Callable[[int, int], CellRule]] = None,
-    constrain_blocks: Optional[Callable[[int, int, str], CellRule]] = None,
+    region_weights: Mapping[str, float] | None = None,
+    block_weights: Mapping[str, Mapping[str, float]] | None = None,
+    tile_weights: Mapping[str, Mapping[str, float]] | None = None,
+    constrain_regions: Callable[[int, int], CellRule] | None = None,
+    constrain_blocks: Callable[[int, int, str], CellRule] | None = None,
 ) -> HAMCMap:
     """Generate a full map.
 
@@ -138,8 +139,8 @@ def generate_map(
     unknown = set(tile_weights) - set(TileConfig.BLOCK_TO_TILES)
     if unknown:
         raise ValueError(f"unknown block(s) in tile_weights: {sorted(unknown)}")
-    issues: List[str] = []
-    timings: Dict[str, float] = {}
+    issues: list[str] = []
+    timings: dict[str, float] = {}
 
     def check_cancel() -> None:
         if cancel is not None and cancel():
@@ -164,14 +165,14 @@ def generate_map(
     check_cancel()
 
     t0 = time.perf_counter()
-    I = IntermediateGenerator(G, subgrid_size=subgrid, rng=rng, weights=block_weights,
+    inter = IntermediateGenerator(G, subgrid_size=subgrid, rng=rng, weights=block_weights,
                               constraint=constrain_blocks)
-    I.set_observer(_tagged(observer, level="intermediate"), step_delay=step_delay * 0.6)
-    if not I.collapse():
+    inter.set_observer(_tagged(observer, level="intermediate"), step_delay=step_delay * 0.6)
+    if not inter.collapse():
         issues.append("intermediate layer failed validation")
-        if strict or any(c.collapsed_value is None for row in I.cells for c in row):
+        if strict or any(c.collapsed_value is None for row in inter.cells for c in row):
             raise GenerationError(issues[0], issues)
-    blocks = I.tile_grid()
+    blocks = inter.tile_grid()
     timings["intermediate"] = time.perf_counter() - t0
 
     t0 = time.perf_counter()
@@ -192,7 +193,7 @@ def generate_map(
             if relay:
                 # Re-announce the block on every attempt so a live view can
                 # reset it when a failed attempt is discarded.
-                def on_event(event: Dict[str, Any], relay=relay, btype=btype) -> None:
+                def on_event(event: dict[str, Any], relay=relay, btype=btype) -> None:
                     if event["type"] == "start":
                         relay({"type": "local_block_start", "block_type": btype, "size": local})
                     relay(event)

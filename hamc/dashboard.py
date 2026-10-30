@@ -22,7 +22,7 @@ import threading
 import time
 import webbrowser
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
-from typing import Any, Dict, List, Optional
+from typing import Any
 from urllib.parse import parse_qs, urlparse
 
 from .config.tile_config import TileConfig
@@ -55,10 +55,10 @@ class EventBroker:
     """
 
     def __init__(self) -> None:
-        self.queue: "queue.Queue[Dict[str, Any]]" = queue.Queue(maxsize=MAX_QUEUE_SIZE)
+        self.queue: queue.Queue[dict[str, Any]] = queue.Queue(maxsize=MAX_QUEUE_SIZE)
         self.done = threading.Event()
 
-    def emit(self, event: Dict[str, Any]) -> None:
+    def emit(self, event: dict[str, Any]) -> None:
         if self.done.is_set():
             return
         try:
@@ -78,7 +78,7 @@ class EventBroker:
             pass
 
 
-def _local_origin(origin: Optional[str]) -> Optional[str]:
+def _local_origin(origin: str | None) -> str | None:
     """Return ``origin`` only if it is a loopback origin, else ``None``.
 
     Reflecting an arbitrary ``Access-Control-Allow-Origin: *`` let any website
@@ -126,7 +126,7 @@ BLOCK_COLORS = {
 }
 
 
-def _palette() -> Dict[str, Any]:
+def _palette() -> dict[str, Any]:
     return {
         "regions": {k: list(v) for k, v in REGION_COLORS.items()},
         "blocks":  {k: list(v) for k, v in BLOCK_COLORS.items()},
@@ -151,7 +151,7 @@ def _clip(name: str, raw: Any, default: int) -> int:
     return max(lo, min(hi, value))
 
 
-def _run_generation(params: Dict[str, Any], broker: EventBroker) -> None:
+def _run_generation(params: dict[str, Any], broker: EventBroker) -> None:
     """Run a full HAMC generation, streaming events through the broker."""
     width = _clip("width",   params.get("width"),   4)
     height = _clip("height",  params.get("height"),  3)
@@ -189,7 +189,7 @@ def _run_generation(params: Dict[str, Any], broker: EventBroker) -> None:
         return
 
     try:
-        seed_int: Optional[int] = int(seed) if seed not in (None, "") else None
+        seed_int: int | None = int(seed) if seed not in (None, "") else None
     except (TypeError, ValueError):
         seed_int = None
 
@@ -205,7 +205,7 @@ def _run_generation(params: Dict[str, Any], broker: EventBroker) -> None:
 
     gen_logger = logging.getLogger("hamc.gen")
 
-    def relay(event: Dict[str, Any]) -> None:
+    def relay(event: dict[str, Any]) -> None:
         event["t"] = time.time() - start_t
         etype = event.get("type")
         level = event.get("level")
@@ -323,7 +323,7 @@ class Handler(BaseHTTPRequestHandler):
             return self._serve_render({k: v[0] for k, v in parse_qs(parsed.query).items()})
         self.send_error(404, f"Not found: {parsed.path}")
 
-    def _serve_render(self, params: Dict[str, str]) -> None:
+    def _serve_render(self, params: dict[str, str]) -> None:
         """PNG of the map for these params; the seed is required so the image
         matches the run the client just watched."""
         try:
@@ -362,7 +362,7 @@ class Handler(BaseHTTPRequestHandler):
         self.end_headers()
         self.wfile.write(body)
 
-    def _serve_json(self, payload: Dict[str, Any]) -> None:
+    def _serve_json(self, payload: dict[str, Any]) -> None:
         body = json.dumps(payload).encode("utf-8")
         self.send_response(200)
         self.send_header("Content-Type", "application/json")
@@ -387,7 +387,7 @@ class Handler(BaseHTTPRequestHandler):
         self.end_headers()
         self.wfile.write(body)
 
-    def _serve_stream(self, qs: Dict[str, list]) -> None:
+    def _serve_stream(self, qs: dict[str, list]) -> None:
         params = {k: v[0] for k, v in qs.items()}
         broker = EventBroker()
         thread = threading.Thread(
@@ -455,7 +455,7 @@ def serve(host: str = "127.0.0.1", port: int = 8765, open_browser: bool = False)
     return 0
 
 
-def main(argv: Optional[list[str]] = None) -> int:
+def main(argv: list[str] | None = None) -> int:
     p = argparse.ArgumentParser(description="HAMC live dashboard")
     p.add_argument("--host", default="127.0.0.1")
     p.add_argument("--port", type=int, default=8765)

@@ -1,5 +1,5 @@
 import random
-from typing import Callable, Dict, Mapping, Optional, Set
+from collections.abc import Callable, Mapping
 
 from ..config.region_config import RegionConfig
 from ..config.weights import merge_weights
@@ -17,9 +17,9 @@ class GlobalGenerator(BaseGenerator):
 
     attempts = 5
 
-    def __init__(self, width: int, height: int, rng: Optional[random.Random] = None,
-                 weights: Optional[Mapping[str, float]] = None,
-                 constraint: Optional[Callable[[int, int], CellRule]] = None):
+    def __init__(self, width: int, height: int, rng: random.Random | None = None,
+                 weights: Mapping[str, float] | None = None,
+                 constraint: Callable[[int, int], CellRule] | None = None):
         required = len(RegionConfig.TYPES)
         if width < 1 or height < 1 or width * height < required:
             raise ValueError(
@@ -30,7 +30,7 @@ class GlobalGenerator(BaseGenerator):
         self.weights = merge_weights(RegionConfig.get_probabilities(), weights, RegionConfig.TYPES, "region")
         self.constraint = constraint
 
-    def compatibility(self) -> Dict[str, Set[str]]:
+    def compatibility(self) -> dict[str, set[str]]:
         return {name: set(cfg["can_adjacent"]) for name, cfg in RegionConfig.TYPES.items()}
 
     def initialize(self) -> bool:
@@ -67,13 +67,13 @@ class GlobalGenerator(BaseGenerator):
             self._apply_rule(*spot, region)
         return super().collapse()
 
-    def _reset(self, seeded: Dict) -> None:
+    def _reset(self, seeded: dict) -> None:
         self.initialize()
         for (r, c), value in seeded.items():
             self.cells[r][c].possible = {value: 1.0}
             self.cells[r][c].collapsed_value = value
 
-    def _present(self) -> Set[str]:
+    def _present(self) -> set[str]:
         return {cell.collapsed_value for row in self.cells for cell in row if cell.collapsed_value}
 
     def validate(self) -> bool:

@@ -4,18 +4,19 @@ import random
 import time
 from abc import ABC, abstractmethod
 from collections import deque
-from typing import Any, Callable, Dict, Iterable, List, Mapping, Optional, Set, Tuple, Union
+from collections.abc import Callable, Iterable, Mapping
+from typing import Any
 
 from ..core.cell import Cell
 from ..core.generator_state import GeneratorState, GeneratorStatus
 
-Observer = Callable[[Dict[str, Any]], None]
+Observer = Callable[[dict[str, Any]], None]
 #: What a constraint returns for one cell: ``None`` (no constraint), a value
 #: to force, an iterable of allowed values or a ``{value: weight}`` dict that
 #: restricts and reweights the cell.
-CellRule = Union[None, str, Iterable[str], Mapping[str, float]]
+CellRule = None | str | Iterable[str] | Mapping[str, float]
 
-_EMPTY: Set[str] = frozenset()
+_EMPTY: set[str] = frozenset()
 _DIRECTIONS = (("top", -1, 0), ("bottom", 1, 0), ("left", 0, -1), ("right", 0, 1))
 
 
@@ -35,13 +36,13 @@ class BaseGenerator(ABC):
     """
 
     #: Upper bound on rollbacks per collapse() call; ``None`` scales with the grid.
-    max_backtracks: Optional[int] = None
+    max_backtracks: int | None = None
 
     def __init__(self, width: int, height: int, name: str,
-                 rng: Optional[random.Random] = None):
+                 rng: random.Random | None = None):
         self.width = width
         self.height = height
-        self.cells: List[List[Cell]] = []
+        self.cells: list[list[Cell]] = []
         self.state = GeneratorState(name)
         self.logger = logging.getLogger(name)
         self.name = name
@@ -49,14 +50,14 @@ class BaseGenerator(ABC):
         # Every random draw goes through this instance, so a seeded Random
         # reproduces a run exactly and concurrent runs don't interfere.
         self.rng = rng or random.Random()
-        self._observer: Optional[Observer] = None
+        self._observer: Observer | None = None
         self.step_delay: float = 0.0
         # Undo trail: (row, col, previous domain, previous collapsed value).
         # Domains are replaced, never mutated, so keeping references is safe.
-        self._trail: List[Tuple[int, int, Dict[str, float], Optional[str]]] = []
+        self._trail: list[tuple[int, int, dict[str, float], str | None]] = []
         # Entropy heap entries: (entropy, not-next-to-collapsed, tie-break, r, c, stamp).
-        self._heap: List[Tuple[float, int, float, int, int, int]] = []
-        self._stamp: Optional[List[List[int]]] = None
+        self._heap: list[tuple[float, int, float, int, int, int]] = []
+        self._stamp: list[list[int]] | None = None
 
     # -- hooks ---------------------------------------------------------------
 
@@ -69,7 +70,7 @@ class BaseGenerator(ABC):
         """Check the fully collapsed grid."""
 
     @abstractmethod
-    def compatibility(self) -> Dict[str, Set[str]]:
+    def compatibility(self) -> dict[str, set[str]]:
         """Symmetric adjacency table: value -> values allowed next to it."""
 
     # -- user constraints ------------------------------------------------------
@@ -93,7 +94,7 @@ class BaseGenerator(ABC):
 
     # -- observer ------------------------------------------------------------
 
-    def set_observer(self, observer: Optional[Observer], step_delay: float = 0.0) -> None:
+    def set_observer(self, observer: Observer | None, step_delay: float = 0.0) -> None:
         """Register a callback that receives generation events.
 
         Events are dicts with a ``type`` key (``start``, ``init``, ``collapse``,
@@ -111,7 +112,7 @@ class BaseGenerator(ABC):
         except Exception as e:  # an observer must never break generation
             self.logger.debug("Observer raised, ignoring: %s", e)
 
-    def _grid_snapshot(self) -> List[List[Dict[str, Any]]]:
+    def _grid_snapshot(self) -> list[list[dict[str, Any]]]:
         return [[{"v": cell.collapsed_value, "n": len(cell.possible)} for cell in row]
                 for row in self.cells]
 
@@ -160,7 +161,7 @@ class BaseGenerator(ABC):
             self.logger.debug("Initial constraints are contradictory")
             return False
 
-        decisions: List[Tuple[int, Tuple[int, int], str]] = []
+        decisions: list[tuple[int, tuple[int, int], str]] = []
         while True:
             target = self._find_min_entropy_cell()
             if target is None:
@@ -213,7 +214,7 @@ class BaseGenerator(ABC):
         """Make the grid arc-consistent after ``(row, col)`` lost options."""
         return self._propagate_many([(row, col)])
 
-    def _propagate_many(self, sources: List[Tuple[int, int]]) -> bool:
+    def _propagate_many(self, sources: list[tuple[int, int]]) -> bool:
         table = self.compatibility()
         queue = deque(sources)
         while queue:
@@ -236,7 +237,7 @@ class BaseGenerator(ABC):
         cell = self.cells[r][c]
         self._trail.append((r, c, cell.possible, cell.collapsed_value))
 
-    def _set_possible(self, r: int, c: int, possible: Dict[str, float]) -> None:
+    def _set_possible(self, r: int, c: int, possible: dict[str, float]) -> None:
         self._record(r, c)
         self.cells[r][c].possible = possible
         if self._stamp is not None:
@@ -271,7 +272,7 @@ class BaseGenerator(ABC):
                                     0 if self._has_collapsed_neighbor(r, c) else 1,
                                     self.rng.random(), r, c, self._stamp[r][c]))
 
-    def _find_min_entropy_cell(self) -> Optional[Tuple[int, int]]:
+    def _find_min_entropy_cell(self) -> tuple[int, int] | None:
         """Lowest-entropy open cell. Ties prefer cells next to a collapsed one
         (organic growth) and are otherwise broken at random. Entries whose
         cell changed since they were pushed are skipped (lazy invalidation)."""
@@ -286,9 +287,9 @@ class BaseGenerator(ABC):
         return any(self.cells[nr][nc].collapsed_value is not None
                    for nr, nc in self.get_neighbors(r, c))
 
-    def _neighbour_values(self, r: int, c: int) -> Dict[str, str]:
+    def _neighbour_values(self, r: int, c: int) -> dict[str, str]:
         """Collapsed neighbours keyed by direction (biases Cell.collapse)."""
-        out: Dict[str, str] = {}
+        out: dict[str, str] = {}
         for direction, dr, dc in _DIRECTIONS:
             nr, nc = r + dr, c + dc
             if 0 <= nr < self.height and 0 <= nc < self.width:
@@ -297,22 +298,22 @@ class BaseGenerator(ABC):
                     out[direction] = v
         return out
 
-    def get_neighbors(self, r: int, c: int) -> List[Tuple[int, int]]:
+    def get_neighbors(self, r: int, c: int) -> list[tuple[int, int]]:
         return [(r + dr, c + dc) for _, dr, dc in _DIRECTIONS
                 if 0 <= r + dr < self.height and 0 <= c + dc < self.width]
 
     # -- state helpers -------------------------------------------------------
 
-    def _patches(self, mark: int, origin: Tuple[int, int]) -> List[List[Any]]:
+    def _patches(self, mark: int, origin: tuple[int, int]) -> list[list[Any]]:
         """Cells whose domain changed since ``mark`` (dashboard diff)."""
         seen = {origin}
-        patches: List[List[Any]] = []
+        patches: list[list[Any]] = []
         for r, c, _, _ in self._trail[mark:]:
             if (r, c) not in seen:
                 seen.add((r, c))
                 patches.append([r, c, len(self.cells[r][c].possible)])
         return patches
 
-    def tile_grid(self) -> List[List[Optional[str]]]:
+    def tile_grid(self) -> list[list[str | None]]:
         """Collapsed values as a plain 2D list."""
         return [[cell.collapsed_value for cell in row] for row in self.cells]

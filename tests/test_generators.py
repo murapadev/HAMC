@@ -1,12 +1,11 @@
 import unittest
-from typing import Dict, List
-from hamc.generators.local_generator import LocalGenerator
+
+from hamc.config.region_config import RegionConfig
+from hamc.core.cell import Cell
 from hamc.generators.global_generator import GlobalGenerator
 from hamc.generators.intermediate_generator import IntermediateGenerator
-from hamc.core.cell import Cell
-from hamc.config.tile_config import TileConfig
-from hamc.config.region_config import RegionConfig
-from hamc.config.block_config import BlockConfig
+from hamc.generators.local_generator import LocalGenerator
+
 
 class TestCell(unittest.TestCase):
     def setUp(self):
@@ -20,7 +19,7 @@ class TestCell(unittest.TestCase):
     def test_entropy(self):
         entropy = self.cell.entropy()
         self.assertGreater(entropy, 0)
-        
+
         self.cell.collapse()
         self.assertEqual(self.cell.entropy(), -1)
 
@@ -51,17 +50,17 @@ class TestLocalGenerator(unittest.TestCase):
         for row in range(self.size):
             self.generator.cells[row][center].possible = {"Agua": 1.0}
             self.generator.cells[row][center].collapse()
-        
+
         self.assertTrue(self.generator.validate_paths())
 
     def test_compatibility_propagation(self):
         center = self.size // 2
         self.generator.cells[0][center].possible = {"Agua": 1.0}
         self.generator.cells[0][center].collapse()
-        
+
         success = self.generator.propagate(0, center)
         self.assertTrue(success)
-        
+
         # Check neighbors have water as possibility
         neighbors = self.generator.get_neighbors(0, center)
         for r, c in neighbors:
@@ -75,7 +74,7 @@ class TestLocalGenerator(unittest.TestCase):
         self.generator.cells[0][center].collapse()
         self.generator.cells[2][center].possible = {"Agua": 1.0}
         self.generator.cells[2][center].collapse()
-        
+
         self.assertFalse(self.generator.validate_paths())
 
 class TestGlobalGenerator(unittest.TestCase):
@@ -88,7 +87,7 @@ class TestGlobalGenerator(unittest.TestCase):
         self.generator.initialize()
         self.assertEqual(len(self.generator.cells), self.height)
         self.assertEqual(len(self.generator.cells[0]), self.width)
-        
+
         # Check initial probabilities
         probs = RegionConfig.get_probabilities()
         for row in self.generator.cells:
@@ -105,10 +104,10 @@ class TestGlobalGenerator(unittest.TestCase):
         self.generator.initialize()
         self.generator.cells[0][0].possible = {"forest": 1.0}
         self.generator.cells[0][0].collapse()
-        
+
         success = self.generator.propagate(0, 0)
         self.assertTrue(success)
-        
+
         # Check neighbors have compatible regions
         for r, c in self.generator.get_neighbors(0, 0):
             cell = self.generator.cells[r][c]
@@ -119,18 +118,18 @@ class TestIntermediateGenerator(unittest.TestCase):
     def setUp(self):
         self.global_gen = GlobalGenerator(2, 2)
         self.assertTrue(self.global_gen.initialize())
-        
+
         # Set specific values for deterministic testing
         self.global_gen.cells[0][0].possible = {"forest": 1.0}
         self.global_gen.cells[0][1].possible = {"desert": 1.0}
         self.global_gen.cells[1][0].possible = {"city": 1.0}
         self.global_gen.cells[1][1].possible = {"forest": 1.0}
-        
+
         # Collapse all cells
         for r in range(2):
             for c in range(2):
                 self.assertTrue(self.global_gen.cells[r][c].collapse())
-                
+
         self.generator = IntermediateGenerator(self.global_gen, subgrid_size=2)
 
     def test_initialization(self):

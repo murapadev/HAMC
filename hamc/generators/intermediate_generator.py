@@ -1,5 +1,5 @@
 import random
-from typing import Callable, Dict, Mapping, Optional, Set
+from collections.abc import Callable, Mapping
 
 from ..config.block_config import BlockConfig
 from ..config.weights import merge_weights
@@ -23,9 +23,9 @@ class IntermediateGenerator(BaseGenerator):
     attempts = 5
 
     def __init__(self, global_gen: GlobalGenerator, subgrid_size: int = 3,
-                 rng: Optional[random.Random] = None,
-                 weights: Optional[Mapping[str, Mapping[str, float]]] = None,
-                 constraint: Optional[Callable[[int, int, str], CellRule]] = None):
+                 rng: random.Random | None = None,
+                 weights: Mapping[str, Mapping[str, float]] | None = None,
+                 constraint: Callable[[int, int, str], CellRule] | None = None):
         """``weights`` maps a region to block weight overrides; ``constraint``
         is called as ``constraint(row, col, region)`` for every block cell."""
         self.subgrid_size = subgrid_size
@@ -43,13 +43,13 @@ class IntermediateGenerator(BaseGenerator):
                          name="IntermediateGenerator", rng=rng or global_gen.rng)
         self.initialize()
 
-    def compatibility(self) -> Dict[str, Set[str]]:
+    def compatibility(self) -> dict[str, set[str]]:
         return BlockConfig.COMPATIBILITY
 
-    def region_at(self, r: int, c: int) -> Optional[str]:
+    def region_at(self, r: int, c: int) -> str | None:
         return self.global_gen.cells[r // self.subgrid_size][c // self.subgrid_size].collapsed_value
 
-    def allowed_blocks(self, r: int, c: int) -> Dict[str, float]:
+    def allowed_blocks(self, r: int, c: int) -> dict[str, float]:
         """Block weights admissible at intermediate cell ``(r, c)``."""
         region = self.region_at(r, c)
         options = {b: w for b, w in self.region_blocks.get(region, {}).items() if w > 0}

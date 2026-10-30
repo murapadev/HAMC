@@ -1,60 +1,43 @@
-# Python bytecode
+# Python
 __pycache__/
 *.py[cod]
-*$py.class
-
-# Distribution / packaging
-dist/
-build/
 *.egg-info/
+build/
+dist/
 
-# Virtual environments
+# Virtual environments (directories, or a `.venv` marker file)
+.venv
 venv/
 env/
-ENV/
-.env/
-.venv/
 
-# Testing
+# Tooling
 .pytest_cache/
-test_reports/
-htmlcov/
+.ruff_cache/
 .coverage
-coverage.xml
-.tox/
+htmlcov/
+test_reports/
 
-# IDE files
+# Editors / OS
 .idea/
 .vscode/
-*.sublime-project
-*.sublime-workspace
-.spyderproject
-.spyproject
-
-# Output directories
-output/
-
-# Jupyter Notebook
-.ipynb_checkpoints
-
-# OS specific files
 .DS_Store
 Thumbs.db
 *.swp
 *~
 
-# Logging files
+# Generated output (CLI, examples)
+output/
 *.log
-
-# Rendered images and data files (if needed)
 *.png
+*.gif
 *.json
+!docs/images/*.png
+!docs/images/*.gif
 
-test_reports/
-
-.github/
-.vscode/
- 
-# Local agent planning notes
+# Local agent notes
+.remember/
 AGENTS.md
 agents.md
+
+# Third-party art is never committed (the old dashboard assets dir)
+dashboard_static/

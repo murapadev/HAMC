@@ -1,11 +1,11 @@
 """Structural checks for local blocks (rivers, roads, oases and buildings)."""
 
 from collections import deque
-from typing import Dict, Iterable, List, Optional, Set, Tuple
+from collections.abc import Iterable
 
 from ..config.advanced_config import get_validator_config
 
-Tilemap = List[List[Optional[str]]]
+Tilemap = list[list[str | None]]
 
 SIDES = ("top", "bottom", "left", "right")
 
@@ -18,7 +18,7 @@ DEFAULT_AXIS = {"river": ("top", "bottom"), "road": ("left", "right")}
 OPPOSITE = {"top": "bottom", "bottom": "top", "left": "right", "right": "left"}
 
 
-def network_connections(block_type: str, neighbors: Optional[Dict[str, str]]) -> Set[str]:
+def network_connections(block_type: str, neighbors: dict[str, str] | None) -> set[str]:
     """Sides of a river/road block that must reach the block edge.
 
     A side connects when the neighbouring block has the same type. A single
@@ -35,7 +35,7 @@ def network_connections(block_type: str, neighbors: Optional[Dict[str, str]]) ->
     return sides
 
 
-def edge_anchor(side: str, height: int, width: int) -> Tuple[int, int]:
+def edge_anchor(side: str, height: int, width: int) -> tuple[int, int]:
     """Cell in the middle of ``side`` where a network crosses the block edge."""
     return {
         "top": (0, width // 2),
@@ -45,7 +45,7 @@ def edge_anchor(side: str, height: int, width: int) -> Tuple[int, int]:
     }[side]
 
 
-def _connected(tilemap: Tilemap, anchors: Iterable[Tuple[int, int]], passable: Set[str]) -> bool:
+def _connected(tilemap: Tilemap, anchors: Iterable[tuple[int, int]], passable: set[str]) -> bool:
     anchors = list(anchors)
     if not anchors or any(tilemap[r][c] not in passable for r, c in anchors):
         return False
@@ -71,7 +71,7 @@ class PathValidator:
 
     @staticmethod
     def validate_network(tilemap: Tilemap, block_type: str,
-                         neighbors: Optional[Dict[str, str]] = None) -> bool:
+                         neighbors: dict[str, str] | None = None) -> bool:
         """Every connected side must be reachable from every other one."""
         height, width = len(tilemap), len(tilemap[0])
         passable = WATER_TILES if block_type == "river" else ROAD_TILES
@@ -80,11 +80,11 @@ class PathValidator:
         return _connected(tilemap, anchors, set(passable))
 
     @staticmethod
-    def validate_river_path(tilemap: Tilemap, neighbors: Optional[Dict[str, str]] = None) -> bool:
+    def validate_river_path(tilemap: Tilemap, neighbors: dict[str, str] | None = None) -> bool:
         return PathValidator.validate_network(tilemap, "river", neighbors)
 
     @staticmethod
-    def validate_road_path(tilemap: Tilemap, neighbors: Optional[Dict[str, str]] = None) -> bool:
+    def validate_road_path(tilemap: Tilemap, neighbors: dict[str, str] | None = None) -> bool:
         return PathValidator.validate_network(tilemap, "road", neighbors)
 
     @staticmethod
@@ -139,10 +139,10 @@ class PathValidator:
         return True
 
     @staticmethod
-    def _find_continuous_sections(tilemap: Tilemap, valid_tiles: Set[str]) -> List[Set[Tuple[int, int]]]:
+    def _find_continuous_sections(tilemap: Tilemap, valid_tiles: set[str]) -> list[set[tuple[int, int]]]:
         """4-connected components made of ``valid_tiles``."""
         height, width = len(tilemap), len(tilemap[0])
-        seen: Set[Tuple[int, int]] = set()
+        seen: set[tuple[int, int]] = set()
         sections = []
         for r0 in range(height):
             for c0 in range(width):
