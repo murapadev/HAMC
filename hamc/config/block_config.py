@@ -42,16 +42,18 @@ class BlockConfig:
     # Block compatibility rules
     COMPATIBILITY: Dict[str, Set[str]] = {
         "grove": {"grove", "clearing", "river", "scrubland", "periurban"},
-        "clearing": {"grove", "clearing", "river", "scrubland", "periurban"},  # Added periurban
-        "river": {"grove", "clearing", "sand", "oasis", "river", "periurban"},  # Added periurban
+        "clearing": {"grove", "clearing", "river", "scrubland", "periurban"},
+        "river": {"grove", "clearing", "sand", "oasis", "river", "periurban"},
         "sand": {"sand", "oasis", "river", "scrubland", "village"},
-        "oasis": {"oasis", "sand", "river", "scrubland"},  # self-adjacent like every other block
+        "oasis": {"oasis", "sand", "river", "scrubland"},
         "residential": {"residential", "commercial", "road", "periurban", "village"},
         "commercial": {"residential", "commercial", "industrial", "road", "periurban", "village"},
         "industrial": {"commercial", "industrial", "road", "periurban", "village"},
-        "road": {"residential", "commercial", "industrial", "periurban", "village"},
-        "scrubland": {"grove", "clearing", "sand", "oasis", "periurban", "scrubland"},  # Added scrubland
-        "periurban": {"grove", "residential", "commercial", "industrial", "road", "scrubland", "clearing", "periurban", "river"},  # Added river
+        "road": {"road", "residential", "commercial", "industrial", "periurban", "village"},
+        # Transition blocks also meet each other where three regions touch.
+        "scrubland": {"grove", "clearing", "sand", "oasis", "periurban", "scrubland", "river", "village"},
+        "periurban": {"grove", "residential", "commercial", "industrial", "road", "scrubland",
+                      "clearing", "periurban", "river", "village"},
         # village is the desert<->city transition block, so it must connect to
         # both the desert side (sand/road) and the city blocks it borders.
         "village": {"sand", "road", "residential", "commercial", "industrial", "village"},

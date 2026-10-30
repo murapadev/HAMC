@@ -29,9 +29,7 @@ from urllib.parse import parse_qs, urlparse
 import numpy as np
 
 from hamc.config.tile_config import TileConfig
-from hamc.generators.global_generator import GlobalGenerator
-from hamc.generators.intermediate_generator import IntermediateGenerator
-from hamc.generators.local_generator import LocalGenerator
+from hamc.pipeline import GenerationCancelled, generate_map
 
 STATIC_DIR = os.path.join(os.path.dirname(os.path.abspath(__file__)), "dashboard_static")
 
@@ -197,13 +195,10 @@ def _run_generation(params: Dict[str, Any], broker: EventBroker) -> None:
     _prev_random_state = random.getstate()
     _prev_np_state = np.random.get_state()
 
-    if seed not in (None, ""):
-        try:
-            seed_int = int(seed)
-            random.seed(seed_int)
-            np.random.seed(seed_int)
-        except (TypeError, ValueError):
-            pass
+    try:
+        seed_int: Optional[int] = int(seed) if seed not in (None, "") else None
+    except (TypeError, ValueError):
+        seed_int = None
 
     start_t = time.time()
     broker.emit({
@@ -217,116 +212,33 @@ def _run_generation(params: Dict[str, Any], broker: EventBroker) -> None:
 
     gen_logger = logging.getLogger("hamc.gen")
 
-    def tag(level: str):
-        def relay(event: Dict[str, Any]) -> None:
-            event["level"] = level
-            event["t"] = time.time() - start_t
-            etype = event.get("type")
-            if etype == "fail":
-                gen_logger.error(
-                    "[%s] fail reason=%s generator=%s",
-                    level, event.get("reason"), event.get("generator"),
-                )
-            elif etype == "conflict":
-                gen_logger.warning(
-                    "[%s] conflict at %s value=%s",
-                    level, event.get("pos"), event.get("value"),
-                )
-            elif etype == "backtrack":
-                gen_logger.info("[%s] backtrack at %s", level, event.get("pos"))
-            broker.emit(event)
-        return relay
-
-    timings: Dict[str, float] = {}
+    def relay(event: Dict[str, Any]) -> None:
+        event["t"] = time.time() - start_t
+        etype = event.get("type")
+        level = event.get("level")
+        if etype == "fail":
+            gen_logger.warning("[%s] fail reason=%s generator=%s",
+                               level, event.get("reason"), event.get("generator"))
+        elif etype == "backtrack":
+            gen_logger.debug("[%s] backtrack at %s", level, event.get("pos"))
+        broker.emit(event)
 
     try:
-        # ---- Global ----
-        t0 = time.time()
-        G = GlobalGenerator(width, height)
-        G.set_observer(tag("global"), step_delay=delay)
-        G.initialize()
-        G.collapse()
-        regions = [[c.collapsed_value for c in row] for row in G.cells]
-        timings["global"] = time.time() - t0
-
-        # ---- Intermediate ----
-        t0 = time.time()
-        I = IntermediateGenerator(G, subgrid_size=subgrid)
-        I.set_observer(tag("intermediate"), step_delay=delay * 0.6)
-        I.collapse()
-        blocks = [[c.collapsed_value for c in row] for row in I.cells]
-        timings["intermediate"] = time.time() - t0
-
-        # ---- Local: stitched tilemap, one block at a time ----
-        t0 = time.time()
-        int_h, int_w = len(I.cells), len(I.cells[0])
-        final_h, final_w = int_h * local_size, int_w * local_size
-        tilemap: List[List[Optional[str]]] = [
-            [None for _ in range(final_w)] for _ in range(final_h)
-        ]
-        broker.emit({
-            "type": "local_init",
-            "level": "local",
-            "height": final_h, "width": final_w,
-            "block_size": local_size,
-            "t": time.time() - start_t,
-        })
-
-        for br in range(int_h):
-            if broker.cancelled():
-                return
-            for bc in range(int_w):
-                if broker.cancelled():
-                    return
-                btype = I.cells[br][bc].collapsed_value or "clearing"
-                neighbours = _block_neighbours(I, br, bc)
-                broker.emit({
-                    "type": "local_block_start",
-                    "level": "local",
-                    "br": br, "bc": bc,
-                    "block_type": btype,
-                    "size": local_size,
-                    "t": time.time() - start_t,
-                })
-
-                base_r, base_c = br * local_size, bc * local_size
-
-                def local_relay(event: Dict[str, Any],
-                                base_r=base_r, base_c=base_c, br=br, bc=bc) -> None:
-                    event["level"] = "local"
-                    event["br"] = br
-                    event["bc"] = bc
-                    event["base"] = [base_r, base_c]
-                    event["t"] = time.time() - start_t
-                    broker.emit(event)
-
-                LG = LocalGenerator(btype, local_size, neighbours)
-                LG.set_observer(local_relay, step_delay=delay * 0.25)
-                LG.collapse()
-
-                local_tiles = [[c.collapsed_value for c in row] for row in LG.cells]
-                for r in range(local_size):
-                    for c in range(local_size):
-                        tilemap[base_r + r][base_c + c] = local_tiles[r][c]
-
-                broker.emit({
-                    "type": "local_block_complete",
-                    "level": "local",
-                    "br": br, "bc": bc,
-                    "tiles": local_tiles,
-                    "t": time.time() - start_t,
-                })
-
-        timings["local"] = time.time() - t0
+        hmap = generate_map(width, height, subgrid, local_size, seed=seed_int,
+                            observer=relay, step_delay=delay,
+                            cancel=broker.cancelled, strict=False)
         broker.emit({
             "type": "run_complete",
             "elapsed": time.time() - start_t,
-            "timings": timings,
-            "regions": regions,
-            "blocks": blocks,
-            "tilemap": tilemap,
+            "timings": hmap.timings,
+            "regions": hmap.regions,
+            "blocks": hmap.blocks,
+            "tilemap": hmap.tilemap,
+            "valid": hmap.valid,
+            "issues": hmap.issues,
         })
-
+    except GenerationCancelled:
+        pass
     except Exception as e:  # pragma: no cover - surfaced to the UI
         logging.getLogger("hamc.gen").exception("Generation failed: %s", e)
         broker.emit({"type": "run_error", "error": f"{type(e).__name__}: {e}"})
@@ -335,22 +247,6 @@ def _run_generation(params: Dict[str, Any], broker: EventBroker) -> None:
         np.random.set_state(_prev_np_state)
         _run_gate.release()
         broker.close()
-
-
-def _block_neighbours(I: IntermediateGenerator, r: int, c: int) -> Dict[str, str]:
-    h, w = len(I.cells), len(I.cells[0])
-    out: Dict[str, str] = {}
-    def _val(rr: int, cc: int) -> Optional[str]:
-        return I.cells[rr][cc].collapsed_value
-    if r > 0 and (v := _val(r - 1, c)):
-        out["top"] = v
-    if r < h - 1 and (v := _val(r + 1, c)):
-        out["bottom"] = v
-    if c > 0 and (v := _val(r, c - 1)):
-        out["left"] = v
-    if c < w - 1 and (v := _val(r, c + 1)):
-        out["right"] = v
-    return out
 
 
 class Handler(BaseHTTPRequestHandler):

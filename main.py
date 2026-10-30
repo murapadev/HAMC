@@ -1,15 +1,10 @@
 #!/usr/bin/env python3
-"""HAMC Demo Runner
+"""HAMC demo runner.
 
-Generates a demo level showing how to use HAMC from the CLI.
-
-It builds:
-- Global regions map
-- Intermediate blocks map
-- Final stitched tilemap (with overlays)
+Generates a map and writes the region, block and tile layers as PNG and JSON.
 
 Usage:
-  python main.py --width 4 --height 3 --subgrid 2 --local 4 --output output --debug
+  python main.py --width 4 --height 3 --subgrid 2 --local 4 --output output --seed 42
 """
 
 from __future__ import annotations
@@ -18,15 +13,10 @@ import argparse
 import json
 import logging
 import os
-import random
 import sys
-from typing import Dict, List
+from typing import Dict, List, Optional
 
-import numpy as np
-
-from hamc.generators.global_generator import GlobalGenerator
-from hamc.generators.intermediate_generator import IntermediateGenerator
-from hamc.generators.local_generator import LocalGenerator
+from hamc.pipeline import GenerationError, generate_map
 from hamc.visualization.renderer import MapRenderer
 
 
@@ -42,98 +32,38 @@ def parse_args(argv: List[str]) -> argparse.Namespace:
     return parser.parse_args(argv)
 
 
-def setup_logging(debug: bool) -> None:
-    level = logging.DEBUG if debug else logging.INFO
-    logging.basicConfig(level=level, format="%(asctime)s - %(name)s - %(levelname)s - %(message)s")
-
-
-def block_neighbors(I: IntermediateGenerator, r: int, c: int) -> Dict[str, str]:
-    int_h, int_w = len(I.cells), len(I.cells[0])
-    n: Dict[str, str] = {}
-    if r > 0:
-        n["top"] = I.cells[r - 1][c].collapsed_value
-    if r < int_h - 1:
-        n["bottom"] = I.cells[r + 1][c].collapsed_value
-    if c > 0:
-        n["left"] = I.cells[r][c - 1].collapsed_value
-    if c < int_w - 1:
-        n["right"] = I.cells[r][c + 1].collapsed_value
-    return n
-
-
-def generate_demo(width: int, height: int, subgrid: int, local: int, out_dir: str) -> Dict[str, str]:
+def generate_demo(width: int, height: int, subgrid: int, local: int, out_dir: str,
+                  seed: Optional[int] = None) -> Dict[str, str]:
+    hmap = generate_map(width, height, subgrid, local, seed=seed)
     os.makedirs(out_dir, exist_ok=True)
     renderer = MapRenderer(tile_size=20, padding=1)
+    images = {
+        "global_map": renderer.render_global_map(hmap.regions),
+        "intermediate_map": renderer.render_intermediate_map(hmap.blocks),
+        "final_tilemap": renderer.render_final_map(
+            hmap.tilemap, global_size=(height, width),
+            intermediate_size=(height * subgrid, width * subgrid)),
+        "final_tilemap_clean": renderer.render_complete_tilemap(hmap.tilemap),
+    }
     paths: Dict[str, str] = {}
-
-    # Global layer
-    G = GlobalGenerator(width, height)
-    G.initialize()
-    success_g = G.collapse()
-    regions = [[cell.collapsed_value for cell in row] for row in G.cells]
-    img_global = renderer.render_global_map(regions)
-    paths["global_map"] = os.path.join(out_dir, "global_map.png")
-    img_global.save(paths["global_map"])
-    if not success_g:
-        logging.getLogger(__name__).warning("Global validation failed; image rendered for visualization anyway")
-
-    # Intermediate layer
-    I = IntermediateGenerator(G, subgrid_size=subgrid)
-    success_i = I.collapse()
-    blocks = [[cell.collapsed_value for cell in row] for row in I.cells]
-    img_intermediate = renderer.render_intermediate_map(blocks)
-    paths["intermediate_map"] = os.path.join(out_dir, "intermediate_map.png")
-    img_intermediate.save(paths["intermediate_map"])
-    if not success_i:
-        logging.getLogger(__name__).warning("Intermediate validation failed; image rendered for visualization anyway")
-
-    # Local layer stitched tilemap
-    int_h, int_w = len(I.cells), len(I.cells[0])
-    final_h, final_w = int_h * local, int_w * local
-    tilemap: List[List[str]] = [[None for _ in range(final_w)] for _ in range(final_h)]  # type: ignore[list-item]
-
-    for br in range(int_h):
-        for bc in range(int_w):
-            btype = I.cells[br][bc].collapsed_value
-            LG = LocalGenerator(btype, local, block_neighbors(I, br, bc))
-            LG.collapse()
-            local_tiles = [[cell.collapsed_value for cell in row] for row in LG.cells]
-            base_r, base_c = br * local, bc * local
-            for r in range(local):
-                for c in range(local):
-                    tilemap[base_r + r][base_c + c] = local_tiles[r][c]
-
-    # Render overlays and clean tilemap
-    img_final = renderer.render_final_map(tilemap, global_size=(height, width), intermediate_size=(height * subgrid, width * subgrid))
-    paths["final_tilemap"] = os.path.join(out_dir, "final_tilemap.png")
-    img_final.save(paths["final_tilemap"])
-
-    img_clean = renderer.render_complete_tilemap(tilemap)
-    paths["final_tilemap_clean"] = os.path.join(out_dir, "final_tilemap_clean.png")
-    img_clean.save(paths["final_tilemap_clean"])
-
-    # Save simple JSON dumps for reference
-    with open(os.path.join(out_dir, "regions.json"), "w", encoding="utf-8") as f:
-        json.dump(regions, f, indent=2, ensure_ascii=False)
-    with open(os.path.join(out_dir, "blocks.json"), "w", encoding="utf-8") as f:
-        json.dump(blocks, f, indent=2, ensure_ascii=False)
-    with open(os.path.join(out_dir, "tilemap.json"), "w", encoding="utf-8") as f:
-        json.dump(tilemap, f, indent=2, ensure_ascii=False)
-
+    for name, img in images.items():
+        paths[name] = os.path.join(out_dir, f"{name}.png")
+        img.save(paths[name])
+    for name, grid in (("regions", hmap.regions), ("blocks", hmap.blocks), ("tilemap", hmap.tilemap)):
+        with open(os.path.join(out_dir, f"{name}.json"), "w", encoding="utf-8") as f:
+            json.dump(grid, f, indent=2, ensure_ascii=False)
     return paths
 
 
-def main(argv: List[str] | None = None) -> int:
-    ns = parse_args(argv or sys.argv[1:])
-    setup_logging(ns.debug)
-
-    # Seed for reproducibility
-    if ns.seed is not None:
-        random.seed(ns.seed)
-        np.random.seed(ns.seed)
-
-    paths = generate_demo(ns.width, ns.height, ns.subgrid, ns.local, ns.output)
-
+def main(argv: Optional[List[str]] = None) -> int:
+    ns = parse_args(sys.argv[1:] if argv is None else argv)
+    logging.basicConfig(level=logging.DEBUG if ns.debug else logging.WARNING,
+                        format="%(asctime)s - %(name)s - %(levelname)s - %(message)s")
+    try:
+        paths = generate_demo(ns.width, ns.height, ns.subgrid, ns.local, ns.output, ns.seed)
+    except GenerationError as e:
+        print(f"error: {e}", file=sys.stderr)
+        return 1
     print("\nHAMC demo generated:")
     for k, v in paths.items():
         print(f" - {k}: {v}")

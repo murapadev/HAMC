@@ -485,6 +485,10 @@ function renderEvent(event) {
         drawGrid(event.level);
       } else {
         state.metrics.local.backtracks++;
+        if (event.grid && state.local.currentTiles) {
+          state.local.currentTiles = event.grid.map(row => row.map(x => ({ v: x.v, n: x.n })));
+          drawTilemap();
+        }
       }
       break;
 
@@ -540,6 +544,9 @@ function renderEvent(event) {
         document.querySelector('.downloads [data-kind="' + k + '"]').disabled = false;
       });
       setStatus('done · ' + event.elapsed.toFixed(2) + 's', 'done');
+      if (event.valid === false && Array.isArray(event.issues)) {
+        showBanner('Finished with invalid parts: ' + event.issues.join('; '));
+      }
       if (event.timings) {
         $('#run-summary').textContent =
           'G ' + event.timings.global.toFixed(2) + 's · ' +

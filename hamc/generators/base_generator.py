@@ -1,45 +1,66 @@
-from abc import ABC, abstractmethod
-from typing import List, Tuple, Dict, Optional, Callable, Any
-import time
 import logging
+import random
+import time
+from abc import ABC, abstractmethod
+from collections import deque
+from typing import Any, Callable, Dict, List, Optional, Set, Tuple
+
 from ..core.cell import Cell
 from ..core.generator_state import GeneratorState, GeneratorStatus
-from ..core.backtrack_manager import BacktrackManager
 
 Observer = Callable[[Dict[str, Any]], None]
+Snapshot = List[List[Tuple[Dict[str, float], Optional[str]]]]
+
+_DIRECTIONS = (("top", -1, 0), ("bottom", 1, 0), ("left", 0, -1), ("right", 0, 1))
 
 
 class BaseGenerator(ABC):
-    """Base class for all wave function collapse generators."""
+    """Wave function collapse over a 2D grid of :class:`Cell`.
+
+    Subclasses provide the initial cell domains (``initialize``), the
+    adjacency table (``compatibility``) and the final checks (``validate``).
+    The solver keeps the grid arc-consistent: whenever a cell loses options,
+    each neighbour drops every value that no longer has a compatible partner.
+    A contradiction rolls back the most recent decision, bans the value that
+    caused it and tries again (chronological backtracking).
+    """
+
+    #: Upper bound on rollbacks per collapse() call; ``None`` scales with the grid.
+    max_backtracks: Optional[int] = None
 
     def __init__(self, width: int, height: int, name: str):
         self.width = width
         self.height = height
         self.cells: List[List[Cell]] = []
         self.state = GeneratorState(name)
-        self.backtrack_manager = BacktrackManager()
         self.logger = logging.getLogger(name)
         self.name = name
+        self.backtracks = 0
         self._observer: Optional[Observer] = None
         self.step_delay: float = 0.0
 
-        # Configure logger if not already configured. ``hasHandlers`` also
-        # checks ancestors, so a logging-configured app (e.g. the dashboard)
-        # doesn't get noisy duplicate output.
-        if not self.logger.hasHandlers():
-            formatter = logging.Formatter('%(asctime)s - %(name)s - %(levelname)s - %(message)s')
-            handler = logging.StreamHandler()
-            handler.setFormatter(formatter)
-            self.logger.addHandler(handler)
-            self.logger.setLevel(logging.INFO)
+    # -- hooks ---------------------------------------------------------------
+
+    @abstractmethod
+    def initialize(self) -> bool:
+        """Fill ``self.cells`` with the initial domains."""
+
+    @abstractmethod
+    def validate(self) -> bool:
+        """Check the fully collapsed grid."""
+
+    @abstractmethod
+    def compatibility(self) -> Dict[str, Set[str]]:
+        """Symmetric adjacency table: value -> values allowed next to it."""
+
+    # -- observer ------------------------------------------------------------
 
     def set_observer(self, observer: Optional[Observer], step_delay: float = 0.0) -> None:
-        """Register a callback to receive generation events for live streaming.
+        """Register a callback that receives generation events.
 
-        Events are dicts with at least a ``type`` key plus payload fields.
-        Setting observer to ``None`` disables emission. ``step_delay`` is the
-        sleep in seconds after each successful cell collapse — useful for
-        animating the process in real time.
+        Events are dicts with a ``type`` key (``start``, ``init``, ``collapse``,
+        ``conflict``, ``backtrack``, ``complete``, ``fail``) plus payload.
+        ``step_delay`` sleeps after each collapse, to animate the process.
         """
         self._observer = observer
         self.step_delay = max(0.0, float(step_delay))
@@ -48,233 +69,148 @@ class BaseGenerator(ABC):
         if not self._observer:
             return
         try:
-            event = {"type": event_type, "generator": self.name, **payload}
-            self._observer(event)
-        except Exception as e:
-            self.logger.debug(f"Observer raised, ignoring: {e}")
+            self._observer({"type": event_type, "generator": self.name, **payload})
+        except Exception as e:  # an observer must never break generation
+            self.logger.debug("Observer raised, ignoring: %s", e)
 
     def _grid_snapshot(self) -> List[List[Dict[str, Any]]]:
-        """Return a compact per-cell snapshot used by the dashboard."""
-        snap: List[List[Dict[str, Any]]] = []
-        for row in self.cells:
-            row_snap = []
-            for cell in row:
-                row_snap.append({
-                    "v": cell.collapsed_value,
-                    "n": len(cell.possible),
-                })
-            snap.append(row_snap)
-        return snap
+        return [[{"v": cell.collapsed_value, "n": len(cell.possible)} for cell in row]
+                for row in self.cells]
+
+    # -- main loop -----------------------------------------------------------
 
     def collapse(self) -> bool:
-        """Template method for wave function collapse."""
+        """Collapse every cell, then validate. Returns ``True`` on success."""
         self.state.update_status(GeneratorStatus.IN_PROGRESS)
         self._emit("start", width=self.width, height=self.height)
-
         try:
-            # Only initialize when the grid hasn't been set up yet. Subclasses
-            # (and the forced-region path in GlobalGenerator) seed ``self.cells``
-            # before calling ``collapse``; re-initializing here would wipe that
-            # seeding — the root cause of regions silently going missing and of
-            # the local "strategic" pre-collapse being thrown away.
-            if not self.cells:
-                if not self.initialize():
-                    self.state.update_status(GeneratorStatus.FAILED, "Initialization failed")
-                    self._emit("fail", reason="initialize")
-                    return False
-
+            # Subclasses may seed ``self.cells`` before collapsing; only build
+            # the grid when nothing is there yet so those seeds survive.
+            if not self.cells and not self.initialize():
+                return self._fail("initialize")
             self._emit("init", grid=self._grid_snapshot())
-
             if not self._run_collapse():
-                self.state.update_status(GeneratorStatus.FAILED, "Collapse failed")
-                self._emit("fail", reason="collapse")
-                return False
-
+                return self._fail("collapse")
             if not self.validate():
-                self.state.update_status(GeneratorStatus.FAILED, "Validation failed")
-                self._emit("fail", reason="validate")
-                return False
-
+                return self._fail("validate")
             self.state.update_status(GeneratorStatus.COMPLETED)
             self._emit("complete", grid=self._grid_snapshot())
             return True
-
         except Exception as e:
-            self.state.logger.error(f"Error during collapse: {str(e)}")
-            self.state.update_status(GeneratorStatus.FAILED, str(e))
-            self._emit("fail", reason=str(e))
-            return False
+            self.logger.exception("Error during collapse")
+            return self._fail(str(e))
 
-    @abstractmethod
-    def initialize(self) -> bool:
-        """Initialize the generator."""
-        pass
-
-    @abstractmethod
-    def validate(self) -> bool:
-        """Validate the final state."""
-        pass
+    def _fail(self, reason: str) -> bool:
+        self.state.update_status(GeneratorStatus.FAILED, reason)
+        self._emit("fail", reason=reason)
+        return False
 
     def _run_collapse(self) -> bool:
-        """Execute wave function collapse with improved backtracking."""
-        self.backtrack_manager.clear()
+        self.backtracks = 0
+        limit = self.max_backtracks or max(50, self.width * self.height)
 
-        # Stream protocol: we ship a full grid snapshot on init/backtrack/
-        # complete and per-collapse *patches* describing the collapsed cell
-        # plus any neighbours whose option-count changed due to propagation.
-        # The client maintains its own grid replica from those patches, which
-        # keeps payloads small and lets the UI animate propagation.
+        # Domains seeded before collapse (forced values, block layouts) must
+        # constrain their neighbours before the first decision.
+        everything = [(r, c) for r in range(self.height) for c in range(self.width)]
+        if not self._propagate_many(everything):
+            self.logger.debug("Initial constraints are contradictory")
+            return False
 
+        decisions: List[Tuple[Snapshot, Tuple[int, int], str]] = []
         while True:
             target = self._find_min_entropy_cell()
-
-            if not target:
-                return True  # All cells collapsed successfully
+            if target is None:
+                return True
 
             r, c = target
-            current_entropy = self.cells[r][c].entropy()
-
-            if current_entropy == float('inf'):
-                point = self.backtrack_manager.pop()
-                if not point:
-                    return False  # No more backtrack points
-
-                self.state.update_status(GeneratorStatus.BACKTRACKING)
-                self._restore(point.state_snapshot)
-                self._emit(
-                    "backtrack",
-                    pos=list(point.position),
-                    grid=self._grid_snapshot(),
-                )
-                continue
-
-            # Take snapshot before collapsing
+            entropy = self.cells[r][c].entropy()
             snapshot = self._snapshot()
-            self.backtrack_manager.push(
-                self.__class__.__name__.lower(),
-                (r, c),
-                snapshot,
-                current_entropy,
-                {"failed_values": self.backtrack_manager.get_failed_values(
-                    self.__class__.__name__.lower(), (r, c)
-                )}
-            )
-
-            # Snapshot option-counts of uncollapsed cells so we can diff
-            # against them after propagation finishes.
-            pre_counts: Dict[Tuple[int, int], int] = {}
-            for rr in range(self.height):
-                for cc in range(self.width):
-                    cell = self.cells[rr][cc]
-                    if cell.collapsed_value is None:
-                        pre_counts[(rr, cc)] = len(cell.possible)
+            before = self._counts() if self._observer else None
 
             self.state.increment_stat("collapses")
-            ctx = {"neighbor_values": self._neighbour_values(r, c)}
-            value = self.cells[r][c].collapse(context=ctx)
-
-            if not value or not self.propagate(r, c):
-                self.backtrack_manager.record_failure(
-                    self.__class__.__name__.lower(),
-                    (r, c),
-                    value or "propagation_failure"
-                )
-                self._emit("conflict", pos=[r, c], value=value)
+            value = self.cells[r][c].collapse(context={"neighbor_values": self._neighbour_values(r, c)})
+            if value != "ERROR" and self.propagate(r, c):
+                decisions.append((snapshot, (r, c), value))
+                self.state.update_entropy(entropy)
+                self._emit("collapse", pos=[r, c], value=value, entropy=entropy,
+                           propagated=self._patches(before, (r, c)) if before else [])
+                if self.step_delay > 0.0:
+                    time.sleep(self.step_delay)
                 continue
 
-            # Build a list of patches: cells (other than the collapsed one)
-            # whose option-count or collapsed_value changed by propagation.
-            patches: List[List[Any]] = []
-            for (rr, cc), n_before in pre_counts.items():
-                if rr == r and cc == c:
-                    continue
-                cell = self.cells[rr][cc]
-                if cell.collapsed_value is not None:
-                    patches.append([rr, cc, 0, cell.collapsed_value])
-                elif len(cell.possible) != n_before:
-                    patches.append([rr, cc, len(cell.possible)])
+            self._emit("conflict", pos=[r, c], value=value)
+            # Undo the failed decision; if banning its value empties the cell
+            # (or contradicts the rest), undo the previous decision as well.
+            while True:
+                self.backtracks += 1
+                self.state.increment_stat("backtracks")
+                if self.backtracks > limit:
+                    self.logger.debug("Backtrack limit (%d) reached", limit)
+                    return False
+                self._restore(snapshot)
+                cell = self.cells[r][c]
+                cell.possible.pop(value, None)
+                if cell.possible and self.propagate(r, c):
+                    self._emit("backtrack", pos=[r, c], grid=self._grid_snapshot())
+                    break
+                if not decisions:
+                    return False
+                snapshot, (r, c), value = decisions.pop()
 
-            self.state.update_entropy(current_entropy)
-            self._emit(
-                "collapse",
-                pos=[r, c],
-                value=value,
-                entropy=current_entropy,
-                propagated=patches,
-            )
-            if self.step_delay > 0.0:
-                time.sleep(self.step_delay)
+    # -- constraint propagation ---------------------------------------------
+
+    def propagate(self, row: int, col: int) -> bool:
+        """Make the grid arc-consistent after ``(row, col)`` lost options."""
+        return self._propagate_many([(row, col)])
+
+    def _propagate_many(self, sources: List[Tuple[int, int]]) -> bool:
+        table = self.compatibility()
+        queue = deque(sources)
+        while queue:
+            r, c = queue.popleft()
+            options = self.cells[r][c].possible
+            for nr, nc in self.get_neighbors(r, c):
+                neighbour = self.cells[nr][nc]
+                kept = {v: w for v, w in neighbour.possible.items()
+                        if not table.get(v, set()).isdisjoint(options)}
+                if not kept:
+                    return False
+                if len(kept) != len(neighbour.possible):
+                    neighbour.possible = kept
+                    queue.append((nr, nc))
+        return True
+
+    # -- cell selection ------------------------------------------------------
 
     def _find_min_entropy_cell(self) -> Optional[Tuple[int, int]]:
-        """Find a cell to collapse next.
-
-        Strategy:
-        1. Drop values previously marked as failed at each position.
-        2. Track the minimum *positive* entropy across the grid.
-        3. Among all cells at that minimum, prefer those adjacent to at least
-           one already-collapsed cell — this produces organic growth from
-           the initial seed rather than scattered noise. Among the remaining
-           candidates, pick uniformly at random so ties don't produce
-           scanline patterns.
-        """
-        import random as _random
-
-        min_entropy = float('inf')
+        """Lowest-entropy open cell; ties prefer cells next to collapsed ones
+        (organic growth) and are otherwise broken at random."""
+        min_entropy = float("inf")
         contenders: List[Tuple[int, int]] = []
-
         for r in range(self.height):
             for c in range(self.width):
                 cell = self.cells[r][c]
                 if cell.collapsed_value is not None:
                     continue
-
-                failed_values = self.backtrack_manager.get_failed_values(
-                    self.__class__.__name__.lower(),
-                    (r, c)
-                )
-                if failed_values:
-                    valid_possible = {k: v for k, v in cell.possible.items()
-                                      if k not in failed_values}
-                    if valid_possible:
-                        cell.possible = valid_possible
-
                 entropy = cell.entropy()
-                if entropy < 0:
-                    continue
                 if entropy < min_entropy - 1e-9:
                     min_entropy = entropy
                     contenders = [(r, c)]
                 elif abs(entropy - min_entropy) <= 1e-9:
                     contenders.append((r, c))
-
         if not contenders:
             return None
-
-        # Among ties, favour cells with a collapsed neighbour so the wave
-        # grows continuously instead of jumping around the grid.
         adjacent = [pos for pos in contenders if self._has_collapsed_neighbor(*pos)]
-        pool = adjacent if adjacent else contenders
-        return _random.choice(pool)
+        return random.choice(adjacent or contenders)
 
     def _has_collapsed_neighbor(self, r: int, c: int) -> bool:
-        for dr, dc in ((-1, 0), (1, 0), (0, -1), (0, 1)):
-            nr, nc = r + dr, c + dc
-            if 0 <= nr < self.height and 0 <= nc < self.width:
-                if self.cells[nr][nc].collapsed_value is not None:
-                    return True
-        return False
+        return any(self.cells[nr][nc].collapsed_value is not None
+                   for nr, nc in self.get_neighbors(r, c))
 
     def _neighbour_values(self, r: int, c: int) -> Dict[str, str]:
-        """Return collapsed-neighbour values keyed by direction.
-
-        Used to bias Cell.collapse toward matching its already-decided
-        neighbours, which produces tighter visual clusters.
-        """
+        """Collapsed neighbours keyed by direction (biases Cell.collapse)."""
         out: Dict[str, str] = {}
-        for direction, (dr, dc) in (
-            ("top", (-1, 0)), ("bottom", (1, 0)),
-            ("left", (0, -1)), ("right", (0, 1)),
-        ):
+        for direction, dr, dc in _DIRECTIONS:
             nr, nc = r + dr, c + dc
             if 0 <= nr < self.height and 0 <= nc < self.width:
                 v = self.cells[nr][nc].collapsed_value
@@ -282,35 +218,37 @@ class BaseGenerator(ABC):
                     out[direction] = v
         return out
 
-    @abstractmethod
-    def propagate(self, row: int, col: int) -> bool:
-        """Propagate constraints from a cell."""
-        pass
-
     def get_neighbors(self, r: int, c: int) -> List[Tuple[int, int]]:
-        """Get valid neighbors for a cell."""
-        neighbors = []
-        for dr, dc in [(-1,0), (1,0), (0,-1), (0,1)]:
-            nr, nc = r + dr, c + dc
-            if 0 <= nr < self.height and 0 <= nc < self.width:
-                neighbors.append((nr, nc))
-        return neighbors
+        return [(r + dr, c + dc) for _, dr, dc in _DIRECTIONS
+                if 0 <= r + dr < self.height and 0 <= c + dc < self.width]
 
-    def _snapshot(self) -> List[List[Tuple[Dict[str, float], str]]]:
-        """Take a snapshot of current state for backtracking."""
-        snap = []
-        for r in range(self.height):
-            row_snap = []
-            for c in range(self.width):
-                cell = self.cells[r][c]
-                row_snap.append((dict(cell.possible), cell.collapsed_value))
-            snap.append(row_snap)
-        return snap
+    # -- state helpers -------------------------------------------------------
 
-    def _restore(self, snapshot: List[List[Tuple[Dict[str, float], str]]]) -> None:
-        """Restore state from a snapshot."""
-        for r in range(self.height):
-            for c in range(self.width):
-                possible, collapsed = snapshot[r][c]
+    def _counts(self) -> Dict[Tuple[int, int], int]:
+        return {(r, c): len(self.cells[r][c].possible)
+                for r in range(self.height) for c in range(self.width)
+                if self.cells[r][c].collapsed_value is None}
+
+    def _patches(self, before: Dict[Tuple[int, int], int], origin: Tuple[int, int]) -> List[List[Any]]:
+        """Cells whose option count changed since ``before`` (dashboard diff)."""
+        patches: List[List[Any]] = []
+        for (r, c), n_before in before.items():
+            if (r, c) == origin:
+                continue
+            cell = self.cells[r][c]
+            if len(cell.possible) != n_before:
+                patches.append([r, c, len(cell.possible)])
+        return patches
+
+    def _snapshot(self) -> Snapshot:
+        return [[(dict(cell.possible), cell.collapsed_value) for cell in row] for row in self.cells]
+
+    def _restore(self, snapshot: Snapshot) -> None:
+        for r, row in enumerate(snapshot):
+            for c, (possible, collapsed) in enumerate(row):
                 self.cells[r][c].possible = dict(possible)
                 self.cells[r][c].collapsed_value = collapsed
+
+    def tile_grid(self) -> List[List[Optional[str]]]:
+        """Collapsed values as a plain 2D list."""
+        return [[cell.collapsed_value for cell in row] for row in self.cells]

@@ -101,7 +101,7 @@ class GeneratorState:
             event += f": {message}"
         
         self.metrics.add_event(event)
-        self.logger.info(event)
+        self.logger.debug(event)
         self.step_counter += 1
 
     def increment_stat(self, stat_name: str) -> None:
@@ -112,7 +112,7 @@ class GeneratorState:
             # Log significant milestones
             value = getattr(self.metrics, stat_name)
             if value > 0 and value % 100 == 0:
-                self.logger.info(f"{stat_name} milestone: {value}")
+                self.logger.debug(f"{stat_name} milestone: {value}")
 
     def update_entropy(self, entropy: float) -> None:
         """Update entropy statistics."""
