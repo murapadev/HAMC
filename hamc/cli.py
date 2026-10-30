@@ -104,16 +104,17 @@ def build_parser() -> argparse.ArgumentParser:
         prog="hamc", description="Hierarchical Adaptive Model Collapse: procedural maps in three layers.")
     parser.add_argument("--version", action="version", version=f"hamc {__version__}")
     sub = parser.add_subparsers(dest="command", required=True)
-    grid = _grid_options()
 
-    p = sub.add_parser("generate", parents=[grid], help="generate a map and write its layers",
+    p = sub.add_parser("generate", parents=[_grid_options()], help="generate a map and write its layers",
                        description="Generate a map; write the region, block and tile layers "
                                    "as PNG plus map.json.")
     p.add_argument("-o", "--output", default="output", help="output directory (default: output)")
     p.add_argument("--json", action="store_true", help="print the map as JSON to stdout instead")
     p.set_defaults(func=cmd_generate)
 
-    p = sub.add_parser("render", parents=[grid], help="generate a map and paint it as an image",
+    # A fresh parent per subcommand: parents share Action objects, so
+    # render's set_defaults(local=8) would otherwise leak into generate.
+    p = sub.add_parser("render", parents=[_grid_options()], help="generate a map and paint it as an image",
                        description="Generate a map and paint it with the procedural tile renderer.")
     p.add_argument("--size", type=_parse_size, metavar="WxH",
                    help="target size in tiles (e.g. 64x64); sets --width/--height from --subgrid/--local")

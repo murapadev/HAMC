@@ -23,6 +23,7 @@ class TestCli(unittest.TestCase):
         data = json.loads(buf.getvalue())
         self.assertEqual((data["seed"], data["width"], data["height"]), (9, 3, 2))
         self.assertTrue(data["valid"])
+        self.assertEqual(data["local"], 4)  # render's default (8) must not leak here
 
 
 if __name__ == "__main__":
