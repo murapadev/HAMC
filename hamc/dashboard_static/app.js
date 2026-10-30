@@ -544,6 +544,8 @@ function renderEvent(event) {
         document.querySelector('.downloads [data-kind="' + k + '"]').disabled = false;
       });
       setStatus('done · ' + event.elapsed.toFixed(2) + 's', 'done');
+      state.lastRun = { params: state.params, seed: event.seed };
+      loadRender();
       if (event.valid === false && Array.isArray(event.issues)) {
         showBanner('Finished with invalid parts: ' + event.issues.join('; '));
       }
@@ -771,3 +773,22 @@ document.querySelectorAll('.downloads button').forEach(btn => {
 $('#fullscreen').addEventListener('click', () => {
   document.querySelector('.layer[data-layer="local"]').classList.toggle('fullscreen');
 });
+
+// ---------- Rendered view ---------------------------------------------------
+// The server re-generates the map from the run's seed (generation is
+// deterministic) and paints it with the procedural tile renderer.
+function loadRender() {
+  const run = state.lastRun;
+  if (!run || run.seed == null) return;
+  const p = run.params;
+  const qs = new URLSearchParams({
+    width: p.width, height: p.height, subgrid: p.subgrid, local: p.local,
+    seed: run.seed, style: $('#render-style').value,
+  });
+  const img = $('#render-img');
+  $('#render-hint').textContent = 'rendering…';
+  img.onload = () => { img.hidden = false; $('#render-hint').hidden = true; };
+  img.onerror = () => { $('#render-hint').hidden = false; $('#render-hint').textContent = 'render failed'; };
+  img.src = '/api/render?' + qs.toString();
+}
+$('#render-style').addEventListener('change', loadRender);

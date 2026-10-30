@@ -404,3 +404,6 @@ input[type='range']::-moz-range-thumb {
   .stage { grid-template-columns: 1fr; }
   .banner { max-width: none; }
 }
+
+.render-wrap { display: flex; align-items: center; justify-content: center; }
+.render-wrap img { max-width: 100%; max-height: 100%; object-fit: contain; image-rendering: auto; }

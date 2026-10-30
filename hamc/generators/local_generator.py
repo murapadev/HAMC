@@ -83,6 +83,10 @@ class LocalGenerator(BaseGenerator):
                     channel.add((r, c))
 
         river = self.block_type == "river"
+        if river and min(H, W) >= 6:
+            # Wider blocks get a two-cell-wide river.
+            channel |= {(r, c - 1) if (r, c) != (cr, cc) and c == cc else (r - 1, c)
+                        for r, c in channel if c == cc or r == cr}
         crossing = len(sides) > 2 or ({"top", "bottom"} & sides and {"left", "right"} & sides)
         for r in range(H):
             for c in range(W):

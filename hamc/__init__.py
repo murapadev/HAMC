@@ -12,5 +12,6 @@ regions, blocks and tiles.
 __version__ = "0.2.0"
 
 from .pipeline import GenerationCancelled, GenerationError, HAMCMap, generate_map
+from .visualization.painter import render_map
 
-__all__ = ["GenerationCancelled", "GenerationError", "HAMCMap", "generate_map", "__version__"]
+__all__ = ["GenerationCancelled", "GenerationError", "HAMCMap", "generate_map", "render_map", "__version__"]

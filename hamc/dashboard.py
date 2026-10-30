@@ -13,6 +13,7 @@ Usage:
 from __future__ import annotations
 
 import argparse
+import io
 import json
 import logging
 import os
@@ -26,6 +27,7 @@ from urllib.parse import parse_qs, urlparse
 
 from .config.tile_config import TileConfig
 from .pipeline import GenerationCancelled, generate_map
+from .visualization.painter import render_map
 
 STATIC_DIR = os.path.join(os.path.dirname(os.path.abspath(__file__)), "dashboard_static")
 
@@ -317,7 +319,48 @@ class Handler(BaseHTTPRequestHandler):
             return self._serve_json({"ok": True})
         if path == "/api/stream":
             return self._serve_stream(parse_qs(parsed.query))
+        if path == "/api/render":
+            return self._serve_render({k: v[0] for k, v in parse_qs(parsed.query).items()})
         self.send_error(404, f"Not found: {parsed.path}")
+
+    def _serve_render(self, params: Dict[str, str]) -> None:
+        """PNG of the map for these params; the seed is required so the image
+        matches the run the client just watched."""
+        try:
+            seed = int(params["seed"])
+        except (KeyError, ValueError):
+            self.send_error(400, "seed is required")
+            return
+        style = params.get("style", "topdown")
+        if style not in ("topdown", "iso"):
+            self.send_error(400, "style must be topdown or iso")
+            return
+        width = _clip("width", params.get("width"), 4)
+        height = _clip("height", params.get("height"), 3)
+        subgrid = _clip("subgrid", params.get("subgrid"), 2)
+        local = _clip("local", params.get("local"), 4)
+        if (width * subgrid * local) * (height * subgrid * local) > MAX_TOTAL_CELLS:
+            self.send_error(400, "map exceeds the tile budget")
+            return
+        if not _run_gate.acquire(blocking=False):
+            self.send_error(503, "server busy")
+            return
+        try:
+            hmap = generate_map(width, height, subgrid, local, seed=seed, strict=False)
+            buf = io.BytesIO()
+            render_map(hmap, style=style, tile_size=12).save(buf, format="PNG")
+        except ValueError as e:
+            self.send_error(400, str(e))
+            return
+        finally:
+            _run_gate.release()
+        body = buf.getvalue()
+        self.send_response(200)
+        self.send_header("Content-Type", "image/png")
+        self.send_header("Content-Length", str(len(body)))
+        self.send_header("Cache-Control", "no-store")
+        self.end_headers()
+        self.wfile.write(body)
 
     def _serve_json(self, payload: Dict[str, Any]) -> None:
         body = json.dumps(payload).encode("utf-8")

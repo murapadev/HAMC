@@ -1,4 +1,4 @@
-"""Command line interface: ``hamc generate`` and ``hamc dashboard``."""
+"""Command line interface: ``hamc generate``, ``hamc render`` and ``hamc dashboard``."""
 
 from __future__ import annotations
 
@@ -7,7 +7,7 @@ import json
 import logging
 import os
 import sys
-from typing import Dict, List, Optional
+from typing import Dict, List, Optional, Tuple
 
 from . import __version__
 from .pipeline import GenerationError, HAMCMap, generate_map
@@ -19,7 +19,7 @@ def _grid_options() -> argparse.ArgumentParser:
     g.add_argument("--width", type=int, default=4, help="region grid width (default: 4)")
     g.add_argument("--height", type=int, default=3, help="region grid height (default: 3)")
     g.add_argument("--subgrid", type=int, default=2, help="blocks per region side (default: 2)")
-    g.add_argument("--local", type=int, default=4, help="tiles per block side (default: 4)")
+    g.add_argument("--local", type=int, default=4, help="tiles per block side (default: 4; 8 for render)")
     g.add_argument("--seed", type=int, default=None, help="seed for a reproducible map")
     p.add_argument("--debug", action="store_true", help="verbose logging")
     return p
@@ -66,6 +66,35 @@ def cmd_generate(ns: argparse.Namespace) -> int:
     return 0
 
 
+def _parse_size(text: str) -> Tuple[int, int]:
+    try:
+        w, h = (int(v) for v in text.lower().split("x"))
+    except ValueError:
+        raise argparse.ArgumentTypeError(f"expected WIDTHxHEIGHT in tiles, got {text!r}") from None
+    if w < 1 or h < 1:
+        raise argparse.ArgumentTypeError("size must be positive")
+    return w, h
+
+
+def cmd_render(ns: argparse.Namespace) -> int:
+    from .visualization.painter import render_map
+
+    if ns.size:
+        # --size is in tiles: pick the region grid that gets closest to it.
+        per_region = ns.subgrid * ns.local
+        ns.width = max(1, round(ns.size[0] / per_region))
+        ns.height = max(1, round(ns.size[1] / per_region))
+    hmap = _generate(ns)
+    img = render_map(hmap, style=ns.style, tile_size=ns.tile_size)
+    img.save(ns.output)
+    rows, cols = len(hmap.tilemap), len(hmap.tilemap[0])
+    print(f"seed {hmap.seed}: {cols}x{rows} tiles, {ns.style} {img.width}x{img.height}px -> {ns.output}")
+    if ns.json:
+        hmap.save_json(ns.json)
+        print(f"map data -> {ns.json}")
+    return 0
+
+
 def cmd_dashboard(ns: argparse.Namespace) -> int:
     from .dashboard import serve
     return serve(ns.host, ns.port, ns.open)
@@ -84,6 +113,16 @@ def build_parser() -> argparse.ArgumentParser:
     p.add_argument("-o", "--output", default="output", help="output directory (default: output)")
     p.add_argument("--json", action="store_true", help="print the map as JSON to stdout instead")
     p.set_defaults(func=cmd_generate)
+
+    p = sub.add_parser("render", parents=[grid], help="generate a map and paint it as an image",
+                       description="Generate a map and paint it with the procedural tile renderer.")
+    p.add_argument("--size", type=_parse_size, metavar="WxH",
+                   help="target size in tiles (e.g. 64x64); sets --width/--height from --subgrid/--local")
+    p.add_argument("--style", choices=["topdown", "iso", "flat"], default="topdown")
+    p.add_argument("--tile-size", type=int, default=12, help="pixels per tile (default: 12)")
+    p.add_argument("-o", "--output", default="map.png", help="image path (default: map.png)")
+    p.add_argument("--json", metavar="PATH", help="also save the map data as JSON")
+    p.set_defaults(func=cmd_render, local=8)
 
     p = sub.add_parser("dashboard", help="serve the live dashboard",
                        description="Serve the live dashboard (Server-Sent Events, stdlib only).")

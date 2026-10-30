@@ -214,6 +214,25 @@
           <div class="legend" id="legend-local"></div>
         </div>
       </section>
+
+      <section class="layer wide" data-layer="render">
+        <header class="layer-h">
+          <div class="layer-title">
+            <span class="layer-idx">04</span>
+            <h3>Rendered · tiles</h3>
+          </div>
+          <div class="layer-actions">
+            <select id="render-style" aria-label="Render style">
+              <option value="topdown">top-down</option>
+              <option value="iso">isometric</option>
+            </select>
+          </div>
+        </header>
+        <div class="canvas-wrap tall render-wrap">
+          <img id="render-img" alt="Rendered map" hidden />
+          <span class="hint" id="render-hint">rendered when a run completes</span>
+        </div>
+      </section>
     </main>
   </div>
 
