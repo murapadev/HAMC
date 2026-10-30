@@ -9,7 +9,7 @@ reproducibility and the SSE cost/limit guards.
 import random
 import unittest
 
-import dashboard
+from hamc import dashboard
 from hamc.config.block_config import BlockConfig
 from hamc.config.tile_config import TileConfig
 from hamc.core.entropy import weighted_random_choice

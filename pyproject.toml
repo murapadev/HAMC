@@ -1,0 +1,47 @@
+[build-system]
+requires = ["setuptools>=77"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "hamc"
+dynamic = ["version"]
+description = "Hierarchical Adaptive Model Collapse: procedural city and terrain maps with three-layer wave function collapse"
+readme = "README.md"
+license = "MIT"
+license-files = ["LICENSE"]
+authors = [{ name = "Pablo RM (@murapadev)" }]
+requires-python = ">=3.11"
+dependencies = ["pillow>=10"]
+keywords = ["procedural-generation", "wave-function-collapse", "wfc", "map-generator", "pcg"]
+classifiers = [
+    "Development Status :: 3 - Alpha",
+    "Intended Audience :: Developers",
+    "Programming Language :: Python :: 3",
+    "Programming Language :: Python :: 3.11",
+    "Programming Language :: Python :: 3.12",
+    "Programming Language :: Python :: 3.13",
+    "Topic :: Games/Entertainment",
+    "Topic :: Multimedia :: Graphics",
+]
+
+[project.optional-dependencies]
+dev = ["pytest>=7", "ruff>=0.6"]
+
+[project.scripts]
+hamc = "hamc.cli:main"
+
+[project.urls]
+Homepage = "https://github.com/murapadev/HAMC"
+Issues = "https://github.com/murapadev/HAMC/issues"
+
+[tool.setuptools.dynamic]
+version = { attr = "hamc.__version__" }
+
+[tool.setuptools.packages.find]
+include = ["hamc*"]
+
+[tool.setuptools.package-data]
+hamc = ["dashboard_static/*"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]

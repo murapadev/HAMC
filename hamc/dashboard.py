@@ -6,8 +6,8 @@ HAMC layers (global, intermediate, local) over Server-Sent Events so a browser
 can animate the wave-function-collapse process in real time.
 
 Usage:
-    python dashboard.py                       # serve on http://127.0.0.1:8765
-    python dashboard.py --host 0.0.0.0 --port 9000
+    hamc dashboard                       # serve on http://127.0.0.1:8765
+    hamc dashboard --host 0.0.0.0 --port 9000
 """
 
 from __future__ import annotations
@@ -17,7 +17,6 @@ import json
 import logging
 import os
 import queue
-import sys
 import threading
 import time
 import webbrowser
@@ -25,8 +24,8 @@ from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from typing import Any, Dict, List, Optional
 from urllib.parse import parse_qs, urlparse
 
-from hamc.config.tile_config import TileConfig
-from hamc.pipeline import GenerationCancelled, generate_map
+from .config.tile_config import TileConfig
+from .pipeline import GenerationCancelled, generate_map
 
 STATIC_DIR = os.path.join(os.path.dirname(os.path.abspath(__file__)), "dashboard_static")
 
@@ -386,33 +385,22 @@ class Handler(BaseHTTPRequestHandler):
             broker.close()
 
 
-def parse_args(argv: list[str]) -> argparse.Namespace:
-    p = argparse.ArgumentParser(description="HAMC live dashboard")
-    p.add_argument("--host", default="127.0.0.1")
-    p.add_argument("--port", type=int, default=8765)
-    p.add_argument("--open", action="store_true", help="open browser on start")
-    return p.parse_args(argv)
-
-
-def main(argv: Optional[list[str]] = None) -> int:
-    args = parse_args(argv or sys.argv[1:])
+def serve(host: str = "127.0.0.1", port: int = 8765, open_browser: bool = False) -> int:
+    """Run the dashboard until interrupted."""
     logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(message)s")
-
-    if args.host not in ("127.0.0.1", "localhost", "::1"):
+    if host not in ("127.0.0.1", "localhost", "::1"):
         logging.warning(
             "Binding to %s exposes the generator beyond loopback. Anyone who can "
             "reach this host can trigger generations (CPU/memory cost). Prefer "
             "--host 127.0.0.1 unless you intend LAN access.",
-            args.host,
+            host,
         )
 
-    server = ThreadingHTTPServer((args.host, args.port), Handler)
-    url = f"http://{args.host}:{args.port}"
+    server = ThreadingHTTPServer((host, port), Handler)
+    url = f"http://{host}:{port}"
     logging.info("HAMC dashboard listening on %s", url)
-    logging.info("  UI:     %s/", url)
     logging.info("  Stream: %s/api/stream?width=4&height=3&subgrid=2&local=4", url)
-    logging.info("  Health: %s/api/health", url)
-    if args.open:
+    if open_browser:
         threading.Timer(0.3, lambda: webbrowser.open(url)).start()
     try:
         server.serve_forever()
@@ -421,6 +409,15 @@ def main(argv: Optional[list[str]] = None) -> int:
     finally:
         server.server_close()
     return 0
+
+
+def main(argv: Optional[list[str]] = None) -> int:
+    p = argparse.ArgumentParser(description="HAMC live dashboard")
+    p.add_argument("--host", default="127.0.0.1")
+    p.add_argument("--port", type=int, default=8765)
+    p.add_argument("--open", action="store_true", help="open browser on start")
+    args = p.parse_args(argv)
+    return serve(args.host, args.port, args.open)
 
 
 if __name__ == "__main__":

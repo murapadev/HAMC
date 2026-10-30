@@ -4,21 +4,20 @@ HEIGHT ?= 3
 SUBGRID ?= 2
 LOCAL ?= 4
 OUT ?= output
-SEED ?=
+SEED ?= 42
 HOST ?= 127.0.0.1
 PORT ?= 8765
 
-.PHONY: demo dashboard test
+.PHONY: demo dashboard test lint
 
 demo:
-ifdef SEED
-	$(PY) main.py --width $(WIDTH) --height $(HEIGHT) --subgrid $(SUBGRID) --local $(LOCAL) --output $(OUT) --seed $(SEED) --debug
-else
-	$(PY) main.py --width $(WIDTH) --height $(HEIGHT) --subgrid $(SUBGRID) --local $(LOCAL) --output $(OUT) --debug
-endif
+	$(PY) -m hamc generate --width $(WIDTH) --height $(HEIGHT) --subgrid $(SUBGRID) --local $(LOCAL) --seed $(SEED) -o $(OUT)
 
 dashboard:
-	$(PY) dashboard.py --host $(HOST) --port $(PORT) --open
+	$(PY) -m hamc dashboard --host $(HOST) --port $(PORT) --open
 
 test:
-	$(PY) run_tests.py
+	$(PY) -m pytest
+
+lint:
+	$(PY) -m ruff check .
