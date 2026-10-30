@@ -1,3 +1,4 @@
+import heapq
 import logging
 import random
 import time
@@ -9,8 +10,8 @@ from ..core.cell import Cell
 from ..core.generator_state import GeneratorState, GeneratorStatus
 
 Observer = Callable[[Dict[str, Any]], None]
-Snapshot = List[List[Tuple[Dict[str, float], Optional[str]]]]
 
+_EMPTY: Set[str] = frozenset()
 _DIRECTIONS = (("top", -1, 0), ("bottom", 1, 0), ("left", 0, -1), ("right", 0, 1))
 
 
@@ -23,6 +24,10 @@ class BaseGenerator(ABC):
     each neighbour drops every value that no longer has a compatible partner.
     A contradiction rolls back the most recent decision, bans the value that
     caused it and tries again (chronological backtracking).
+
+    Cost per step is proportional to what changed, not to the grid: the next
+    cell comes from an entropy heap with lazy invalidation, and rollbacks
+    replay an undo trail instead of restoring full-grid snapshots.
     """
 
     #: Upper bound on rollbacks per collapse() call; ``None`` scales with the grid.
@@ -42,6 +47,12 @@ class BaseGenerator(ABC):
         self.rng = rng or random.Random()
         self._observer: Optional[Observer] = None
         self.step_delay: float = 0.0
+        # Undo trail: (row, col, previous domain, previous collapsed value).
+        # Domains are replaced, never mutated, so keeping references is safe.
+        self._trail: List[Tuple[int, int, Dict[str, float], Optional[str]]] = []
+        # Entropy heap entries: (entropy, not-next-to-collapsed, tie-break, r, c, stamp).
+        self._heap: List[Tuple[float, int, float, int, int, int]] = []
+        self._stamp: Optional[List[List[int]]] = None
 
     # -- hooks ---------------------------------------------------------------
 
@@ -112,6 +123,12 @@ class BaseGenerator(ABC):
     def _run_collapse(self) -> bool:
         self.backtracks = 0
         limit = self.max_backtracks or max(50, self.width * self.height)
+        self._trail = []
+        self._heap = []
+        self._stamp = [[0] * self.width for _ in range(self.height)]
+        for r in range(self.height):
+            for c in range(self.width):
+                self._push(r, c)
 
         # Domains seeded before collapse (forced values, block layouts) must
         # constrain their neighbours before the first decision.
@@ -120,25 +137,28 @@ class BaseGenerator(ABC):
             self.logger.debug("Initial constraints are contradictory")
             return False
 
-        decisions: List[Tuple[Snapshot, Tuple[int, int], str]] = []
+        decisions: List[Tuple[int, Tuple[int, int], str]] = []
         while True:
             target = self._find_min_entropy_cell()
             if target is None:
                 return True
 
             r, c = target
-            entropy = self.cells[r][c].entropy()
-            snapshot = self._snapshot()
-            before = self._counts() if self._observer else None
+            cell = self.cells[r][c]
+            entropy = cell.entropy()
+            mark = len(self._trail)
 
             self.state.increment_stat("collapses")
-            value = self.cells[r][c].collapse(context={"neighbor_values": self._neighbour_values(r, c)},
-                                              rng=self.rng)
+            self._record(r, c)
+            value = cell.collapse(context={"neighbor_values": self._neighbour_values(r, c)},
+                                  rng=self.rng)
+            self._touch(r, c)
             if value != "ERROR" and self.propagate(r, c):
-                decisions.append((snapshot, (r, c), value))
+                decisions.append((mark, (r, c), value))
                 self.state.update_entropy(entropy)
-                self._emit("collapse", pos=[r, c], value=value, entropy=entropy,
-                           propagated=self._patches(before, (r, c)) if before else [])
+                if self._observer:
+                    self._emit("collapse", pos=[r, c], value=value, entropy=entropy,
+                               propagated=self._patches(mark, (r, c)))
                 if self.step_delay > 0.0:
                     time.sleep(self.step_delay)
                 continue
@@ -152,15 +172,17 @@ class BaseGenerator(ABC):
                 if self.backtracks > limit:
                     self.logger.debug("Backtrack limit (%d) reached", limit)
                     return False
-                self._restore(snapshot)
-                cell = self.cells[r][c]
-                cell.possible.pop(value, None)
-                if cell.possible and self.propagate(r, c):
-                    self._emit("backtrack", pos=[r, c], grid=self._grid_snapshot())
-                    break
+                self._undo_to(mark)
+                remaining = {k: w for k, w in self.cells[r][c].possible.items() if k != value}
+                if remaining:
+                    self._set_possible(r, c, remaining)
+                    if self.propagate(r, c):
+                        if self._observer:
+                            self._emit("backtrack", pos=[r, c], grid=self._grid_snapshot())
+                        break
                 if not decisions:
                     return False
-                snapshot, (r, c), value = decisions.pop()
+                mark, (r, c), value = decisions.pop()
 
     # -- constraint propagation ---------------------------------------------
 
@@ -177,36 +199,65 @@ class BaseGenerator(ABC):
             for nr, nc in self.get_neighbors(r, c):
                 neighbour = self.cells[nr][nc]
                 kept = {v: w for v, w in neighbour.possible.items()
-                        if not table.get(v, set()).isdisjoint(options)}
+                        if not table.get(v, _EMPTY).isdisjoint(options)}
                 if not kept:
                     return False
                 if len(kept) != len(neighbour.possible):
-                    neighbour.possible = kept
+                    self._set_possible(nr, nc, kept)
                     queue.append((nr, nc))
         return True
 
-    # -- cell selection ------------------------------------------------------
+    # -- undo trail and entropy heap ----------------------------------------
+
+    def _record(self, r: int, c: int) -> None:
+        cell = self.cells[r][c]
+        self._trail.append((r, c, cell.possible, cell.collapsed_value))
+
+    def _set_possible(self, r: int, c: int, possible: Dict[str, float]) -> None:
+        self._record(r, c)
+        self.cells[r][c].possible = possible
+        if self._stamp is not None:
+            self._push(r, c)
+
+    def _touch(self, r: int, c: int) -> None:
+        """Re-rank the open neighbours of a cell whose collapsed state changed."""
+        for nr, nc in self.get_neighbors(r, c):
+            if self.cells[nr][nc].collapsed_value is None:
+                self._push(nr, nc)
+
+    def _undo_to(self, mark: int) -> None:
+        trail = self._trail
+        while len(trail) > mark:
+            r, c, possible, collapsed = trail.pop()
+            cell = self.cells[r][c]
+            was_collapsed = cell.collapsed_value is not None
+            cell.possible = possible
+            cell.collapsed_value = collapsed
+            if collapsed is None:
+                self._push(r, c)
+            if was_collapsed != (collapsed is not None):
+                self._touch(r, c)
+
+    def _push(self, r: int, c: int) -> None:
+        """(Re)insert a cell in the entropy heap; older entries go stale."""
+        cell = self.cells[r][c]
+        if cell.collapsed_value is not None:
+            return
+        self._stamp[r][c] += 1
+        heapq.heappush(self._heap, (round(cell.entropy(), 9),
+                                    0 if self._has_collapsed_neighbor(r, c) else 1,
+                                    self.rng.random(), r, c, self._stamp[r][c]))
 
     def _find_min_entropy_cell(self) -> Optional[Tuple[int, int]]:
-        """Lowest-entropy open cell; ties prefer cells next to collapsed ones
-        (organic growth) and are otherwise broken at random."""
-        min_entropy = float("inf")
-        contenders: List[Tuple[int, int]] = []
-        for r in range(self.height):
-            for c in range(self.width):
-                cell = self.cells[r][c]
-                if cell.collapsed_value is not None:
-                    continue
-                entropy = cell.entropy()
-                if entropy < min_entropy - 1e-9:
-                    min_entropy = entropy
-                    contenders = [(r, c)]
-                elif abs(entropy - min_entropy) <= 1e-9:
-                    contenders.append((r, c))
-        if not contenders:
-            return None
-        adjacent = [pos for pos in contenders if self._has_collapsed_neighbor(*pos)]
-        return self.rng.choice(adjacent or contenders)
+        """Lowest-entropy open cell. Ties prefer cells next to a collapsed one
+        (organic growth) and are otherwise broken at random. Entries whose
+        cell changed since they were pushed are skipped (lazy invalidation)."""
+        heap = self._heap
+        while heap:
+            _, _, _, r, c, stamp = heapq.heappop(heap)
+            if stamp == self._stamp[r][c] and self.cells[r][c].collapsed_value is None:
+                return r, c
+        return None
 
     def _has_collapsed_neighbor(self, r: int, c: int) -> bool:
         return any(self.cells[nr][nc].collapsed_value is not None
@@ -229,30 +280,15 @@ class BaseGenerator(ABC):
 
     # -- state helpers -------------------------------------------------------
 
-    def _counts(self) -> Dict[Tuple[int, int], int]:
-        return {(r, c): len(self.cells[r][c].possible)
-                for r in range(self.height) for c in range(self.width)
-                if self.cells[r][c].collapsed_value is None}
-
-    def _patches(self, before: Dict[Tuple[int, int], int], origin: Tuple[int, int]) -> List[List[Any]]:
-        """Cells whose option count changed since ``before`` (dashboard diff)."""
+    def _patches(self, mark: int, origin: Tuple[int, int]) -> List[List[Any]]:
+        """Cells whose domain changed since ``mark`` (dashboard diff)."""
+        seen = {origin}
         patches: List[List[Any]] = []
-        for (r, c), n_before in before.items():
-            if (r, c) == origin:
-                continue
-            cell = self.cells[r][c]
-            if len(cell.possible) != n_before:
-                patches.append([r, c, len(cell.possible)])
+        for r, c, _, _ in self._trail[mark:]:
+            if (r, c) not in seen:
+                seen.add((r, c))
+                patches.append([r, c, len(self.cells[r][c].possible)])
         return patches
-
-    def _snapshot(self) -> Snapshot:
-        return [[(dict(cell.possible), cell.collapsed_value) for cell in row] for row in self.cells]
-
-    def _restore(self, snapshot: Snapshot) -> None:
-        for r, row in enumerate(snapshot):
-            for c, (possible, collapsed) in enumerate(row):
-                self.cells[r][c].possible = dict(possible)
-                self.cells[r][c].collapsed_value = collapsed
 
     def tile_grid(self) -> List[List[Optional[str]]]:
         """Collapsed values as a plain 2D list."""
