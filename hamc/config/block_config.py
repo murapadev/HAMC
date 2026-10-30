@@ -1,10 +1,10 @@
-from typing import Dict, Set, List, Tuple
+
 
 class BlockConfig:
     """Configuration for intermediate level blocks."""
-    
+
     # Region to block mappings
-    REGION_TO_BLOCKS: Dict[str, List[Tuple[str, float]]] = {
+    REGION_TO_BLOCKS: dict[str, list[tuple[str, float]]] = {
         "forest": [
             ("grove", 0.6),
             ("clearing", 0.3),
@@ -16,15 +16,16 @@ class BlockConfig:
             ("river", 0.1)
         ],
         "city": [
-            ("residential", 0.4),
-            ("commercial", 0.3),
-            ("industrial", 0.2),
-            ("road", 0.1)
+            ("residential", 0.35),
+            ("commercial", 0.25),
+            ("industrial", 0.15),
+            ("road", 0.15),
+            ("park", 0.1),
         ]
     }
 
     # Transition blocks between regions
-    TRANSITIONS: Dict[str, Dict[str, Tuple[str, float]]] = {
+    TRANSITIONS: dict[str, dict[str, tuple[str, float]]] = {
         "forest": {
             "desert": ("scrubland", 0.8),
             "city": ("periurban", 0.8)
@@ -40,34 +41,37 @@ class BlockConfig:
     }
 
     # Block compatibility rules
-    COMPATIBILITY: Dict[str, Set[str]] = {
+    COMPATIBILITY: dict[str, set[str]] = {
         "grove": {"grove", "clearing", "river", "scrubland", "periurban"},
-        "clearing": {"grove", "clearing", "river", "scrubland", "periurban"},  # Added periurban
-        "river": {"grove", "clearing", "sand", "oasis", "river", "periurban"},  # Added periurban
+        "clearing": {"grove", "clearing", "river", "scrubland", "periurban"},
+        "river": {"grove", "clearing", "sand", "oasis", "river", "periurban"},
         "sand": {"sand", "oasis", "river", "scrubland", "village"},
-        "oasis": {"oasis", "sand", "river", "scrubland"},  # self-adjacent like every other block
-        "residential": {"residential", "commercial", "road", "periurban", "village"},
-        "commercial": {"residential", "commercial", "industrial", "road", "periurban", "village"},
+        "oasis": {"oasis", "sand", "river", "scrubland"},
+        "residential": {"residential", "commercial", "road", "periurban", "village", "park"},
+        "commercial": {"residential", "commercial", "industrial", "road", "periurban", "village", "park"},
         "industrial": {"commercial", "industrial", "road", "periurban", "village"},
-        "road": {"residential", "commercial", "industrial", "periurban", "village"},
-        "scrubland": {"grove", "clearing", "sand", "oasis", "periurban", "scrubland"},  # Added scrubland
-        "periurban": {"grove", "residential", "commercial", "industrial", "road", "scrubland", "clearing", "periurban", "river"},  # Added river
+        "road": {"road", "residential", "commercial", "industrial", "periurban", "village", "park"},
+        "park": {"park", "periurban"},
+        # Transition blocks also meet each other where three regions touch.
+        "scrubland": {"grove", "clearing", "sand", "oasis", "periurban", "scrubland", "river", "village"},
+        "periurban": {"grove", "residential", "commercial", "industrial", "road", "scrubland",
+                      "clearing", "periurban", "river", "village"},
         # village is the desert<->city transition block, so it must connect to
         # both the desert side (sand/road) and the city blocks it borders.
         "village": {"sand", "road", "residential", "commercial", "industrial", "village"},
     }
 
     @classmethod
-    def get_blocks_for_region(cls, region: str) -> Dict[str, float]:
+    def get_blocks_for_region(cls, region: str) -> dict[str, float]:
         """Get block distribution for a region."""
         if region not in cls.REGION_TO_BLOCKS:
             return {}
         return {block: weight for block, weight in cls.REGION_TO_BLOCKS[region]}
 
     @classmethod
-    def get_transition(cls, region1: str, region2: str) -> Tuple[str, float]:
+    def get_transition(cls, region1: str, region2: str) -> tuple[str, float]:
         """Get transition block between two regions."""
-        if (region1 in cls.TRANSITIONS and 
+        if (region1 in cls.TRANSITIONS and
             region2 in cls.TRANSITIONS[region1]):
             return cls.TRANSITIONS[region1][region2]
         return ("", 0.0)
@@ -82,7 +86,7 @@ class BlockConfig:
         return block2 in cls.COMPATIBILITY[block1] and block1 in cls.COMPATIBILITY[block2]
 
 
-def _symmetrize(graph: Dict[str, Set[str]]) -> None:
+def _symmetrize(graph: dict[str, set[str]]) -> None:
     """Add the reverse edge for every adjacency so the graph is symmetric.
 
     The compatibility tables are hand-written and drifted out of symmetry over

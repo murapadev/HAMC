@@ -1,16 +1,16 @@
-from typing import Dict, Set, Union
+
 
 class RegionConfig:
     """Configuration for global regions."""
-    
-    TYPES: Dict[str, Dict[str, Union[Set[str], float]]] = {
+
+    TYPES: dict[str, dict[str, set[str] | float]] = {
         "forest":   {"can_adjacent": {"forest", "desert", "city"}, "prob": 0.4},
         "desert": {"can_adjacent": {"forest", "desert", "city"}, "prob": 0.3},
         "city":   {"can_adjacent": {"forest", "desert", "city"}, "prob": 0.3}
     }
 
     @classmethod
-    def get_probabilities(cls) -> Dict[str, float]:
+    def get_probabilities(cls) -> dict[str, float]:
         """Get probability distribution for regions."""
         return {region: config["prob"] for region, config in cls.TYPES.items()}
 

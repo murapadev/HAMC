@@ -1,267 +1,163 @@
-from typing import List, Dict, Set, Optional, Tuple, Union
-from ..config.tile_config import TileConfig
-from ..config.block_config import BlockConfig
-import logging
+"""Structural checks for local blocks (rivers, roads, oases and buildings)."""
+
+from collections import deque
+from collections.abc import Iterable
+
 from ..config.advanced_config import get_validator_config
+
+Tilemap = list[list[str | None]]
+
+SIDES = ("top", "bottom", "left", "right")
+
+WATER_TILES = frozenset({"Agua", "Aguas_profundas", "Lirio"})
+ROAD_TILES = frozenset({"Asfalto", "Linea", "Paso_cebra"})
+
+# A network block with no matching neighbour still draws a straight segment
+# along this axis, so isolated rivers and roads read as such.
+DEFAULT_AXIS = {"river": ("top", "bottom"), "road": ("left", "right")}
+OPPOSITE = {"top": "bottom", "bottom": "top", "left": "right", "right": "left"}
+
+
+def network_connections(block_type: str, neighbors: dict[str, str] | None) -> set[str]:
+    """Sides of a river/road block that must reach the block edge.
+
+    A side connects when the neighbouring block has the same type. A single
+    connection is extended straight through so it never dead-ends, and an
+    isolated block falls back to its default axis.
+    """
+    neighbors = neighbors or {}
+    sides = {s for s in SIDES if neighbors.get(s) == block_type}
+    if not sides:
+        return set(DEFAULT_AXIS[block_type])
+    if len(sides) == 1:
+        (only,) = sides
+        sides.add(OPPOSITE[only])
+    return sides
+
+
+def edge_anchor(side: str, height: int, width: int) -> tuple[int, int]:
+    """Cell in the middle of ``side`` where a network crosses the block edge."""
+    return {
+        "top": (0, width // 2),
+        "bottom": (height - 1, width // 2),
+        "left": (height // 2, 0),
+        "right": (height // 2, width - 1),
+    }[side]
+
+
+def _connected(tilemap: Tilemap, anchors: Iterable[tuple[int, int]], passable: set[str]) -> bool:
+    anchors = list(anchors)
+    if not anchors or any(tilemap[r][c] not in passable for r, c in anchors):
+        return False
+    height, width = len(tilemap), len(tilemap[0])
+    seen = {anchors[0]}
+    queue = deque([anchors[0]])
+    while queue:
+        r, c = queue.popleft()
+        for nr, nc in ((r - 1, c), (r + 1, c), (r, c - 1), (r, c + 1)):
+            if 0 <= nr < height and 0 <= nc < width and (nr, nc) not in seen \
+                    and tilemap[nr][nc] in passable:
+                seen.add((nr, nc))
+                queue.append((nr, nc))
+    return all(a in seen for a in anchors)
+
+
+def _count(tilemap: Tilemap, tile: str) -> int:
+    return sum(row.count(tile) for row in tilemap)
 
 
 class PathValidator:
-    """Validates path constraints and connectivity requirements."""
-    
-    def __init__(self):
-        self.logger = logging.getLogger(__name__)
-    
+    """Validates connectivity and composition rules of a finished block."""
+
     @staticmethod
-    def validate_river_path(tilemap: List[List[Optional[str]]], 
-                         neighbors: Optional[Dict[str, str]] = None) -> bool:
-        """Validate vertical river path with neighbor constraints.
-        
-        Args:
-            tilemap: 2D list of tile types (may contain None for uncollapsed cells)
-            neighbors: Dictionary of neighbor block types
-            
-        Returns:
-            bool: True if river path is valid
-        """
+    def validate_network(tilemap: Tilemap, block_type: str,
+                         neighbors: dict[str, str] | None = None) -> bool:
+        """Every connected side must be reachable from every other one."""
         height, width = len(tilemap), len(tilemap[0])
-        center = width // 2
-        
-        # Check if we need to connect to neighboring rivers
-        needs_top = neighbors and neighbors.get('top') == 'river'
-        needs_bottom = neighbors and neighbors.get('bottom') == 'river'
-        
-        # Validate top connection if needed
-        if needs_top and (tilemap[0][center] is None or tilemap[0][center] != "Agua"):
-            return False
-            
-        # Validate bottom connection if needed
-        if needs_bottom and (tilemap[-1][center] is None or tilemap[-1][center] != "Agua"):
-            return False
-        
-        # Check that center column has water from top to bottom
-        center_ok = all(tilemap[r][center] == "Agua" for r in range(height))
-        if center_ok:
-            return True
-
-        # Fallback: accept any continuous vertical path from top to bottom
-        # as a valid river, honoring neighbor connection requirements.
-        starts = [(0, c) for c in range(width) if tilemap[0][c] == "Agua"]
-        for sr, sc in starts:
-            visited = [[False]*width for _ in range(height)]
-            if PathValidator._find_vertical_path(tilemap, sr, sc, visited):
-                # If neighbor connections are required at top/bottom, ensure they are satisfied
-                if needs_top and tilemap[0][sc] != "Agua":
-                    continue
-                # Find any bottom column that completes the path (already ensured by DFS)
-                return True
-        return False
+        passable = WATER_TILES if block_type == "river" else ROAD_TILES
+        anchors = [edge_anchor(s, height, width)
+                   for s in sorted(network_connections(block_type, neighbors))]
+        return _connected(tilemap, anchors, set(passable))
 
     @staticmethod
-    def validate_road_path(tilemap: List[List[Optional[str]]], 
-                         neighbors: Optional[Dict[str, str]] = None) -> bool:
-        """Validate horizontal road path with neighbor constraints.
-        
-        Args:
-            tilemap: 2D list of tile types (may contain None for uncollapsed cells)
-            neighbors: Dictionary of neighbor block types
-            
-        Returns:
-            bool: True if road path is valid
-        """
-        height, width = len(tilemap), len(tilemap[0])
-        center = height // 2
-        valid_tiles = {"Asfalto", "Linea"}
-        
-        # Check if we need to connect to neighboring roads
-        needs_left = neighbors and neighbors.get('left') == 'road'
-        needs_right = neighbors and neighbors.get('right') == 'road'
-        
-        # Validate left connection if needed
-        if needs_left and (tilemap[center][0] is None or tilemap[center][0] not in valid_tiles):
-            return False
-            
-        # Validate right connection if needed
-        if needs_right and (tilemap[center][-1] is None or tilemap[center][-1] not in valid_tiles):
-            return False
-        
-        # Find continuous road path
-        visited = [[False]*width for _ in range(height)]
-        start_pos = [(r, 0) for r in range(height) if tilemap[r][0] in valid_tiles]
-        
-        for start_r, start_c in start_pos:
-            visited = [[False]*width for _ in range(height)]
-            if PathValidator._find_horizontal_path(tilemap, start_r, start_c, visited, valid_tiles):
-                return True
-                
-        return False
+    def validate_river_path(tilemap: Tilemap, neighbors: dict[str, str] | None = None) -> bool:
+        return PathValidator.validate_network(tilemap, "river", neighbors)
 
     @staticmethod
-    def validate_oasis(tilemap: List[List[Optional[str]]]) -> bool:
-        """Validate oasis has water and proper transitions.
-        
-        Args:
-            tilemap: 2D list of tile types (may contain None for uncollapsed cells)
-            
-        Returns:
-            bool: True if oasis layout is valid
-        """
+    def validate_road_path(tilemap: Tilemap, neighbors: dict[str, str] | None = None) -> bool:
+        return PathValidator.validate_network(tilemap, "road", neighbors)
+
+    @staticmethod
+    def validate_oasis(tilemap: Tilemap) -> bool:
+        """An oasis needs a central pond surrounded by sand."""
         config = get_validator_config()
         height, width = len(tilemap), len(tilemap[0])
-        water_count = sum(1 for row in tilemap for tile in row if tile == "Agua")
-        sand_count = sum(1 for row in tilemap for tile in row if tile == "Arena")
-        
-        # Oasis should have both water and sand with more relaxed proportions
-        min_water = (height * width) * config.min_water_percentage
-        min_sand = (height * width) * 0.2
-        
-        if water_count < min_water:
+        area = height * width
+        if _count(tilemap, "Agua") < area * config.min_water_percentage:
             return False
-        
-        if sand_count < min_sand:
+        if _count(tilemap, "Arena") < area * 0.2:
             return False
-            
-        # Check that water is primarily in the central area
-        # and not scattered randomly across the map
+
         center_r, center_c = height // 2, width // 2
-        central_water = 0
-        peripheral_water = 0
-        
+        radius = max(2, min(height, width) // 2 - 1)
+        central = peripheral = 0
         for r in range(height):
             for c in range(width):
                 if tilemap[r][c] == "Agua":
-                    dist = ((r - center_r) ** 2 + (c - center_c) ** 2) ** 0.5
-                    if dist <= max(2, min(height, width) // 3):
-                        central_water += 1
+                    if ((r - center_r) ** 2 + (c - center_c) ** 2) ** 0.5 <= radius:
+                        central += 1
                     else:
-                        peripheral_water += 1
-        
-        # Most water should be central (relaxed constraint)
-        if central_water < peripheral_water:
+                        peripheral += 1
+        if central < peripheral:
             return False
-        
-        # Water should not touch ALL map edges, but can touch some
-        # Count edges with water
-        edges_with_water = 0
-        
-        # Check top and bottom edges
-        for c in range(width):
-            if tilemap[0][c] == "Agua":
-                edges_with_water += 1
-            if tilemap[height-1][c] == "Agua":
-                edges_with_water += 1
-                
-        # Check left and right edges
-        for r in range(height):
-            if tilemap[r][0] == "Agua":
-                edges_with_water += 1
-            if tilemap[r][width-1] == "Agua":
-                edges_with_water += 1
-                
-        # Allow water to touch at most one edge
-        if edges_with_water > 1:
-            return False
-            
-        return True
+
+        edge_water = sum(
+            1 for r in range(height) for c in range(width)
+            if tilemap[r][c] == "Agua" and (r in (0, height - 1) or c in (0, width - 1))
+        )
+        return edge_water <= 1
 
     @staticmethod
-    def validate_building(tilemap: List[List[Optional[str]]], block_type: str) -> bool:
-        """Validate building blocks have proper structure.
-        
-        Args:
-            tilemap: 2D list of tile types (may contain None for uncollapsed cells)
-            block_type: Type of building block
-            
-        Returns:
-            bool: True if building layout is valid
+    def validate_building(tilemap: Tilemap, block_type: str) -> bool:
+        """Composition rules per building type.
+
+        Requirements scale down on 3x3 blocks, where a facade only has one
+        free interior cell.
         """
-        height, width = len(tilemap), len(tilemap[0])
-        
+        small = min(len(tilemap), len(tilemap[0])) <= 3
+
         if block_type == "residential":
-            # Residential blocks should have doors and windows
-            door_count = sum(1 for row in tilemap for tile in row if tile == "Puerta")
-            window_count = sum(1 for row in tilemap for tile in row if tile == "Ventana")
-            
-            if door_count == 0 or window_count < 2:
-                return False
-                
-        elif block_type == "commercial":
-            # Commercial blocks need display windows
-            display_count = sum(1 for row in tilemap 
-                              for tile in row if tile == "Escaparate")
-            if display_count < 2:
-                return False
-                
-        elif block_type == "industrial":
-            # Industrial blocks need large continuous sections
-            metal_sections = PathValidator._find_continuous_sections(
-                tilemap, {"Metal", "Hormigón"}
-            )
-            if not any(len(section) >= 4 for section in metal_sections):
-                return False
-                
+            return _count(tilemap, "Puerta") >= 1 and _count(tilemap, "Ventana") >= (1 if small else 2)
+
+        if block_type == "commercial":
+            return _count(tilemap, "Escaparate") >= 2
+
+        if block_type == "industrial":
+            sections = PathValidator._find_continuous_sections(tilemap, {"Metal", "Hormigón"})
+            return any(len(section) >= 4 for section in sections)
+
         return True
 
     @staticmethod
-    def _find_vertical_path(tilemap: List[List[Optional[str]]], r: int, c: int,
-                          visited: List[List[bool]]) -> bool:
-        """Find continuous vertical path using iterative DFS."""
+    def _find_continuous_sections(tilemap: Tilemap, valid_tiles: set[str]) -> list[set[tuple[int, int]]]:
+        """4-connected components made of ``valid_tiles``."""
         height, width = len(tilemap), len(tilemap[0])
-        stack = [(r, c)]
-        while stack:
-            cr, cc = stack.pop()
-            if cr == height - 1:
-                return True
-            visited[cr][cc] = True
-            for dr, dc in [(1, 0), (1, -1), (1, 1)]:
-                nr, nc = cr + dr, cc + dc
-                if (0 <= nr < height and 0 <= nc < width and
-                    not visited[nr][nc] and tilemap[nr][nc] == "Agua"):
-                    stack.append((nr, nc))
-        return False
-
-    @staticmethod
-    def _find_horizontal_path(tilemap: List[List[Optional[str]]], r: int, c: int,
-                            visited: List[List[bool]], valid_tiles: Set[str]) -> bool:
-        """Find continuous horizontal path using iterative DFS."""
-        height, width = len(tilemap), len(tilemap[0])
-        stack = [(r, c)]
-        while stack:
-            cr, cc = stack.pop()
-            if cc == width - 1:
-                return True
-            visited[cr][cc] = True
-            for dr, dc in [(0, 1), (-1, 1), (1, 1)]:
-                nr, nc = cr + dr, cc + dc
-                if (0 <= nr < height and 0 <= nc < width and
-                    not visited[nr][nc] and tilemap[nr][nc] in valid_tiles):
-                    stack.append((nr, nc))
-        return False
-
-    @staticmethod
-    def _find_continuous_sections(tilemap: List[List[Optional[str]]], 
-                                valid_tiles: Set[str]) -> List[Set[Tuple[int, int]]]:
-        """Find continuous sections of specified tiles using flood fill."""
-        height, width = len(tilemap), len(tilemap[0])
-        visited = [[False]*width for _ in range(height)]
+        seen: set[tuple[int, int]] = set()
         sections = []
-        
-        def flood_fill(start_r: int, start_c: int, section: Set[Tuple[int, int]]) -> None:
-            stack = [(start_r, start_c)]
-            while stack:
-                r, c = stack.pop()
-                if (not (0 <= r < height and 0 <= c < width) or
-                    visited[r][c] or tilemap[r][c] not in valid_tiles):
+        for r0 in range(height):
+            for c0 in range(width):
+                if (r0, c0) in seen or tilemap[r0][c0] not in valid_tiles:
                     continue
-                visited[r][c] = True
-                section.add((r, c))
-                for dr, dc in [(0, 1), (1, 0), (0, -1), (-1, 0)]:
-                    stack.append((r + dr, c + dc))
-        
-        for r in range(height):
-            for c in range(width):
-                if not visited[r][c] and tilemap[r][c] in valid_tiles:
-                    section = set()
-                    flood_fill(r, c, section)
-                    sections.append(section)
-                    
+                section = set()
+                stack = [(r0, c0)]
+                seen.add((r0, c0))
+                while stack:
+                    r, c = stack.pop()
+                    section.add((r, c))
+                    for nr, nc in ((r - 1, c), (r + 1, c), (r, c - 1), (r, c + 1)):
+                        if 0 <= nr < height and 0 <= nc < width and (nr, nc) not in seen \
+                                and tilemap[nr][nc] in valid_tiles:
+                            seen.add((nr, nc))
+                            stack.append((nr, nc))
+                sections.append(section)
         return sections

@@ -1,4 +1,3 @@
-from typing import Dict, Set, List, Tuple
 
 
 class TileConfig:
@@ -10,7 +9,7 @@ class TileConfig:
     so the resulting tilemaps read as coherent scenery rather than noise.
     """
 
-    BLOCK_TO_TILES: Dict[str, List[Tuple[str, float]]] = {
+    BLOCK_TO_TILES: dict[str, list[tuple[str, float]]] = {
         # Forest biome --------------------------------------------------------
         "grove": [
             ("Árbol",   0.55),
@@ -85,6 +84,14 @@ class TileConfig:
             ("Farola",     0.04),
         ],
 
+        "park": [
+            ("Cesped_urbano", 0.45),
+            ("Árbol",         0.25),
+            ("Sendero",       0.15),
+            ("Flores",        0.10),
+            ("Farola",        0.05),
+        ],
+
         # Transitions ---------------------------------------------------------
         "scrubland": [
             ("Arbusto", 0.30),
@@ -114,9 +121,10 @@ class TileConfig:
     # Compatibility graph. The relation is symmetric *in spirit* but we list
     # both directions for clarity and to keep ``are_compatible`` simple.
     # Tiles not appearing in this map cannot be placed next to anything.
-    COMPATIBILITY: Dict[str, Set[str]] = {
+    COMPATIBILITY: dict[str, set[str]] = {
         # Forest --------------------------------------------------------------
-        "Árbol":      {"Árbol", "Hierba", "Musgo", "Helecho", "Hojas", "Tronco"},
+        "Árbol":      {"Árbol", "Hierba", "Musgo", "Helecho", "Hojas", "Tronco",
+                       "Cesped_urbano", "Sendero", "Flores"},
         "Hierba":     {"Árbol", "Hierba", "Flores", "Agua", "Arena", "Piedra",
                        "Arbusto", "Musgo", "Helecho", "Sendero", "Tocón",
                        "Tierra", "Cesped_urbano", "Junco", "Palmera"},
@@ -146,11 +154,13 @@ class TileConfig:
         "Hueso":   {"Arena", "Duna", "Hueso", "Tierra"},
 
         # City --------------------------------------------------------------
-        "Pared":        {"Puerta", "Ventana", "Pared", "Escaparate", "Tejado"},
-        "Puerta":       {"Pared", "Ventana", "Acera", "Sendero", "Cesped_urbano"},
-        "Ventana":      {"Pared", "Ventana", "Escaparate", "Tejado"},
+        "Pared":        {"Puerta", "Ventana", "Pared", "Escaparate", "Tejado",
+                         "Hormigón", "Metal", "Tubería"},
+        "Puerta":       {"Pared", "Ventana", "Acera", "Sendero", "Cesped_urbano",
+                         "Escaparate", "Hormigón", "Metal"},
+        "Ventana":      {"Pared", "Ventana", "Escaparate", "Tejado", "Hormigón", "Metal"},
         "Escaparate":   {"Ventana", "Hormigón", "Pared", "Acera"},
-        "Tejado":       {"Pared", "Tejado", "Ventana", "Chimenea"},
+        "Tejado":       {"Pared", "Tejado", "Ventana", "Chimenea", "Metal"},
         "Chimenea":     {"Tejado", "Chimenea", "Hormigón", "Metal"},
         "Suelo_madera": {"Pared", "Madera", "Puerta", "Suelo_madera"},
         "Metal":        {"Hormigón", "Metal", "Asfalto", "Tubería", "Chimenea"},
@@ -159,9 +169,10 @@ class TileConfig:
         "Tubería":      {"Metal", "Hormigón", "Tubería", "Cemento"},
         "Asfalto":      {"Arena", "Metal", "Cemento", "Linea", "Acera",
                          "Bordillo", "Paso_cebra"},
-        "Linea":        {"Asfalto", "Linea", "Paso_cebra"},
+        "Linea":        {"Asfalto", "Linea", "Paso_cebra", "Acera", "Bordillo"},
         "Acera":        {"Asfalto", "Acera", "Bordillo", "Cesped_urbano",
-                         "Cemento", "Puerta", "Escaparate", "Farola", "Paso_cebra"},
+                         "Cemento", "Puerta", "Escaparate", "Farola", "Paso_cebra",
+                         "Arena", "Sendero"},
         "Bordillo":     {"Asfalto", "Acera", "Bordillo", "Cesped_urbano"},
         "Paso_cebra":   {"Asfalto", "Linea", "Acera", "Paso_cebra"},
         "Farola":       {"Acera", "Cesped_urbano", "Farola"},
@@ -186,7 +197,7 @@ class TileConfig:
 
     # Visual palette — picked for legibility on a dark canvas with smooth
     # transitions between adjacent biomes.
-    COLORS: Dict[str, Tuple[int, int, int]] = {
+    COLORS: dict[str, tuple[int, int, int]] = {
         # Forest
         "Árbol":      (33, 110, 50),
         "Hierba":     (124, 198, 73),
@@ -246,7 +257,7 @@ class TileConfig:
     }
 
     @classmethod
-    def get_tiles_for_block(cls, block: str) -> Dict[str, float]:
+    def get_tiles_for_block(cls, block: str) -> dict[str, float]:
         """Get tile distribution for a block."""
         if block not in cls.BLOCK_TO_TILES:
             return {}
@@ -263,12 +274,12 @@ class TileConfig:
         return tile2 in a and tile1 in b
 
     @classmethod
-    def get_color(cls, tile: str) -> Tuple[int, int, int]:
+    def get_color(cls, tile: str) -> tuple[int, int, int]:
         """Get color for visualization."""
         return cls.COLORS.get(tile, cls.COLORS["ERROR"])
 
 
-def _symmetrize(graph: Dict[str, Set[str]]) -> None:
+def _symmetrize(graph: dict[str, set[str]]) -> None:
     """Add the reverse edge for every adjacency so the graph is symmetric.
 
     ``are_compatible`` requires both directions; the hand-written table had

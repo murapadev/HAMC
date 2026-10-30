@@ -1,0 +1,148 @@
+"""Command line interface: ``hamc generate``, ``hamc render`` and ``hamc dashboard``."""
+
+from __future__ import annotations
+
+import argparse
+import json
+import logging
+import os
+import sys
+
+from . import __version__
+from .pipeline import GenerationError, HAMCMap, generate_map
+
+
+def _grid_options() -> argparse.ArgumentParser:
+    p = argparse.ArgumentParser(add_help=False)
+    g = p.add_argument_group("map size")
+    g.add_argument("--width", type=int, default=4, help="region grid width (default: 4)")
+    g.add_argument("--height", type=int, default=3, help="region grid height (default: 3)")
+    g.add_argument("--subgrid", type=int, default=2, help="blocks per region side (default: 2)")
+    g.add_argument("--local", type=int, default=4, help="tiles per block side (default: 4; 8 for render)")
+    g.add_argument("--seed", type=int, default=None, help="seed for a reproducible map")
+    p.add_argument("--debug", action="store_true", help="verbose logging")
+    return p
+
+
+def _generate(ns: argparse.Namespace) -> HAMCMap:
+    return generate_map(ns.width, ns.height, ns.subgrid, ns.local, seed=ns.seed)
+
+
+def write_layers(hmap: HAMCMap, out_dir: str) -> dict[str, str]:
+    """Write the three layers as flat-colour PNGs plus ``map.json``."""
+    from .visualization.renderer import MapRenderer
+
+    os.makedirs(out_dir, exist_ok=True)
+    renderer = MapRenderer(tile_size=20, padding=1)
+    images = {
+        "global_map": renderer.render_global_map(hmap.regions),
+        "intermediate_map": renderer.render_intermediate_map(hmap.blocks),
+        "final_tilemap": renderer.render_final_map(
+            hmap.tilemap, global_size=(hmap.height, hmap.width),
+            intermediate_size=(hmap.height * hmap.subgrid, hmap.width * hmap.subgrid)),
+        "final_tilemap_clean": renderer.render_complete_tilemap(hmap.tilemap),
+    }
+    paths: dict[str, str] = {}
+    for name, img in images.items():
+        paths[name] = os.path.join(out_dir, f"{name}.png")
+        img.save(paths[name])
+    paths["map"] = os.path.join(out_dir, "map.json")
+    hmap.save_json(paths["map"])
+    return paths
+
+
+def cmd_generate(ns: argparse.Namespace) -> int:
+    hmap = _generate(ns)
+    if ns.json:
+        json.dump(hmap.to_dict(), sys.stdout, ensure_ascii=False)
+        sys.stdout.write("\n")
+        return 0
+    paths = write_layers(hmap, ns.output)
+    rows, cols = len(hmap.tilemap), len(hmap.tilemap[0])
+    print(f"seed {hmap.seed}: {cols}x{rows} tiles in {sum(hmap.timings.values()):.2f}s")
+    for name, path in paths.items():
+        print(f"  {name}: {path}")
+    return 0
+
+
+def _parse_size(text: str) -> tuple[int, int]:
+    try:
+        w, h = (int(v) for v in text.lower().split("x"))
+    except ValueError:
+        raise argparse.ArgumentTypeError(f"expected WIDTHxHEIGHT in tiles, got {text!r}") from None
+    if w < 1 or h < 1:
+        raise argparse.ArgumentTypeError("size must be positive")
+    return w, h
+
+
+def cmd_render(ns: argparse.Namespace) -> int:
+    from .visualization.painter import render_map
+
+    if ns.size:
+        # --size is in tiles: pick the region grid that gets closest to it.
+        per_region = ns.subgrid * ns.local
+        ns.width = max(1, round(ns.size[0] / per_region))
+        ns.height = max(1, round(ns.size[1] / per_region))
+    hmap = _generate(ns)
+    img = render_map(hmap, style=ns.style, tile_size=ns.tile_size)
+    img.save(ns.output)
+    rows, cols = len(hmap.tilemap), len(hmap.tilemap[0])
+    print(f"seed {hmap.seed}: {cols}x{rows} tiles, {ns.style} {img.width}x{img.height}px -> {ns.output}")
+    if ns.json:
+        hmap.save_json(ns.json)
+        print(f"map data -> {ns.json}")
+    return 0
+
+
+def cmd_dashboard(ns: argparse.Namespace) -> int:
+    from .dashboard import serve
+    return serve(ns.host, ns.port, ns.open)
+
+
+def build_parser() -> argparse.ArgumentParser:
+    parser = argparse.ArgumentParser(
+        prog="hamc", description="Hierarchical Adaptive Model Collapse: procedural maps in three layers.")
+    parser.add_argument("--version", action="version", version=f"hamc {__version__}")
+    sub = parser.add_subparsers(dest="command", required=True)
+
+    p = sub.add_parser("generate", parents=[_grid_options()], help="generate a map and write its layers",
+                       description="Generate a map; write the region, block and tile layers "
+                                   "as PNG plus map.json.")
+    p.add_argument("-o", "--output", default="output", help="output directory (default: output)")
+    p.add_argument("--json", action="store_true", help="print the map as JSON to stdout instead")
+    p.set_defaults(func=cmd_generate)
+
+    # A fresh parent per subcommand: parents share Action objects, so
+    # render's set_defaults(local=8) would otherwise leak into generate.
+    p = sub.add_parser("render", parents=[_grid_options()], help="generate a map and paint it as an image",
+                       description="Generate a map and paint it with the procedural tile renderer.")
+    p.add_argument("--size", type=_parse_size, metavar="WxH",
+                   help="target size in tiles (e.g. 64x64); sets --width/--height from --subgrid/--local")
+    p.add_argument("--style", choices=["topdown", "iso", "flat"], default="topdown")
+    p.add_argument("--tile-size", type=int, default=12, help="pixels per tile (default: 12)")
+    p.add_argument("-o", "--output", default="map.png", help="image path (default: map.png)")
+    p.add_argument("--json", metavar="PATH", help="also save the map data as JSON")
+    p.set_defaults(func=cmd_render, local=8)
+
+    p = sub.add_parser("dashboard", help="serve the live dashboard",
+                       description="Serve the live dashboard (Server-Sent Events, stdlib only).")
+    p.add_argument("--host", default="127.0.0.1")
+    p.add_argument("--port", type=int, default=8765)
+    p.add_argument("--open", action="store_true", help="open a browser tab")
+    p.set_defaults(func=cmd_dashboard, debug=False)
+    return parser
+
+
+def main(argv: list[str] | None = None) -> int:
+    ns = build_parser().parse_args(argv)
+    logging.basicConfig(level=logging.DEBUG if ns.debug else logging.WARNING,
+                        format="%(levelname)s %(name)s: %(message)s")
+    try:
+        return ns.func(ns)
+    except (GenerationError, ValueError) as e:
+        print(f"hamc: error: {e}", file=sys.stderr)
+        return 1
+
+
+if __name__ == "__main__":
+    raise SystemExit(main())

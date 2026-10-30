@@ -6,32 +6,28 @@ HAMC layers (global, intermediate, local) over Server-Sent Events so a browser
 can animate the wave-function-collapse process in real time.
 
 Usage:
-    python dashboard.py                       # serve on http://127.0.0.1:8765
-    python dashboard.py --host 0.0.0.0 --port 9000
+    hamc dashboard                       # serve on http://127.0.0.1:8765
+    hamc dashboard --host 0.0.0.0 --port 9000
 """
 
 from __future__ import annotations
 
 import argparse
+import io
 import json
 import logging
 import os
 import queue
-import random
-import sys
 import threading
 import time
 import webbrowser
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
-from typing import Any, Dict, List, Optional
+from typing import Any
 from urllib.parse import parse_qs, urlparse
 
-import numpy as np
-
-from hamc.config.tile_config import TileConfig
-from hamc.generators.global_generator import GlobalGenerator
-from hamc.generators.intermediate_generator import IntermediateGenerator
-from hamc.generators.local_generator import LocalGenerator
+from .config.tile_config import TileConfig
+from .pipeline import GenerationCancelled, generate_map
+from .visualization.painter import render_map
 
 STATIC_DIR = os.path.join(os.path.dirname(os.path.abspath(__file__)), "dashboard_static")
 
@@ -59,10 +55,10 @@ class EventBroker:
     """
 
     def __init__(self) -> None:
-        self.queue: "queue.Queue[Dict[str, Any]]" = queue.Queue(maxsize=MAX_QUEUE_SIZE)
+        self.queue: queue.Queue[dict[str, Any]] = queue.Queue(maxsize=MAX_QUEUE_SIZE)
         self.done = threading.Event()
 
-    def emit(self, event: Dict[str, Any]) -> None:
+    def emit(self, event: dict[str, Any]) -> None:
         if self.done.is_set():
             return
         try:
@@ -82,7 +78,7 @@ class EventBroker:
             pass
 
 
-def _local_origin(origin: Optional[str]) -> Optional[str]:
+def _local_origin(origin: str | None) -> str | None:
     """Return ``origin`` only if it is a loopback origin, else ``None``.
 
     Reflecting an arbitrary ``Access-Control-Allow-Origin: *`` let any website
@@ -123,13 +119,14 @@ BLOCK_COLORS = {
     "commercial":  (170, 210, 230),
     "industrial":  (170, 175, 182),
     "road":        (62, 62, 70),
+    "park":        (96, 170, 84),
     "scrubland":   (154, 195, 90),
     "periurban":   (148, 152, 158),
     "village":     (180, 132, 80),
 }
 
 
-def _palette() -> Dict[str, Any]:
+def _palette() -> dict[str, Any]:
     return {
         "regions": {k: list(v) for k, v in REGION_COLORS.items()},
         "blocks":  {k: list(v) for k, v in BLOCK_COLORS.items()},
@@ -141,7 +138,7 @@ PARAM_LIMITS = {
     "width":   (1, 8),
     "height":  (1, 8),
     "subgrid": (1, 4),
-    "local":   (2, 8),
+    "local":   (3, 8),
 }
 
 
@@ -154,7 +151,7 @@ def _clip(name: str, raw: Any, default: int) -> int:
     return max(lo, min(hi, value))
 
 
-def _run_generation(params: Dict[str, Any], broker: EventBroker) -> None:
+def _run_generation(params: dict[str, Any], broker: EventBroker) -> None:
     """Run a full HAMC generation, streaming events through the broker."""
     width = _clip("width",   params.get("width"),   4)
     height = _clip("height",  params.get("height"),  3)
@@ -191,19 +188,10 @@ def _run_generation(params: Dict[str, Any], broker: EventBroker) -> None:
         broker.close()
         return
 
-    # Save module-level RNG state so we can restore it after this run.
-    # Without this, two concurrent SSE streams using ThreadingHTTPServer
-    # would corrupt each other's random state (M-7 in the audit).
-    _prev_random_state = random.getstate()
-    _prev_np_state = np.random.get_state()
-
-    if seed not in (None, ""):
-        try:
-            seed_int = int(seed)
-            random.seed(seed_int)
-            np.random.seed(seed_int)
-        except (TypeError, ValueError):
-            pass
+    try:
+        seed_int: int | None = int(seed) if seed not in (None, "") else None
+    except (TypeError, ValueError):
+        seed_int = None
 
     start_t = time.time()
     broker.emit({
@@ -217,140 +205,40 @@ def _run_generation(params: Dict[str, Any], broker: EventBroker) -> None:
 
     gen_logger = logging.getLogger("hamc.gen")
 
-    def tag(level: str):
-        def relay(event: Dict[str, Any]) -> None:
-            event["level"] = level
-            event["t"] = time.time() - start_t
-            etype = event.get("type")
-            if etype == "fail":
-                gen_logger.error(
-                    "[%s] fail reason=%s generator=%s",
-                    level, event.get("reason"), event.get("generator"),
-                )
-            elif etype == "conflict":
-                gen_logger.warning(
-                    "[%s] conflict at %s value=%s",
-                    level, event.get("pos"), event.get("value"),
-                )
-            elif etype == "backtrack":
-                gen_logger.info("[%s] backtrack at %s", level, event.get("pos"))
-            broker.emit(event)
-        return relay
-
-    timings: Dict[str, float] = {}
+    def relay(event: dict[str, Any]) -> None:
+        event["t"] = time.time() - start_t
+        etype = event.get("type")
+        level = event.get("level")
+        if etype == "fail":
+            gen_logger.warning("[%s] fail reason=%s generator=%s",
+                               level, event.get("reason"), event.get("generator"))
+        elif etype == "backtrack":
+            gen_logger.debug("[%s] backtrack at %s", level, event.get("pos"))
+        broker.emit(event)
 
     try:
-        # ---- Global ----
-        t0 = time.time()
-        G = GlobalGenerator(width, height)
-        G.set_observer(tag("global"), step_delay=delay)
-        G.initialize()
-        G.collapse()
-        regions = [[c.collapsed_value for c in row] for row in G.cells]
-        timings["global"] = time.time() - t0
-
-        # ---- Intermediate ----
-        t0 = time.time()
-        I = IntermediateGenerator(G, subgrid_size=subgrid)
-        I.set_observer(tag("intermediate"), step_delay=delay * 0.6)
-        I.collapse()
-        blocks = [[c.collapsed_value for c in row] for row in I.cells]
-        timings["intermediate"] = time.time() - t0
-
-        # ---- Local: stitched tilemap, one block at a time ----
-        t0 = time.time()
-        int_h, int_w = len(I.cells), len(I.cells[0])
-        final_h, final_w = int_h * local_size, int_w * local_size
-        tilemap: List[List[Optional[str]]] = [
-            [None for _ in range(final_w)] for _ in range(final_h)
-        ]
-        broker.emit({
-            "type": "local_init",
-            "level": "local",
-            "height": final_h, "width": final_w,
-            "block_size": local_size,
-            "t": time.time() - start_t,
-        })
-
-        for br in range(int_h):
-            if broker.cancelled():
-                return
-            for bc in range(int_w):
-                if broker.cancelled():
-                    return
-                btype = I.cells[br][bc].collapsed_value or "clearing"
-                neighbours = _block_neighbours(I, br, bc)
-                broker.emit({
-                    "type": "local_block_start",
-                    "level": "local",
-                    "br": br, "bc": bc,
-                    "block_type": btype,
-                    "size": local_size,
-                    "t": time.time() - start_t,
-                })
-
-                base_r, base_c = br * local_size, bc * local_size
-
-                def local_relay(event: Dict[str, Any],
-                                base_r=base_r, base_c=base_c, br=br, bc=bc) -> None:
-                    event["level"] = "local"
-                    event["br"] = br
-                    event["bc"] = bc
-                    event["base"] = [base_r, base_c]
-                    event["t"] = time.time() - start_t
-                    broker.emit(event)
-
-                LG = LocalGenerator(btype, local_size, neighbours)
-                LG.set_observer(local_relay, step_delay=delay * 0.25)
-                LG.collapse()
-
-                local_tiles = [[c.collapsed_value for c in row] for row in LG.cells]
-                for r in range(local_size):
-                    for c in range(local_size):
-                        tilemap[base_r + r][base_c + c] = local_tiles[r][c]
-
-                broker.emit({
-                    "type": "local_block_complete",
-                    "level": "local",
-                    "br": br, "bc": bc,
-                    "tiles": local_tiles,
-                    "t": time.time() - start_t,
-                })
-
-        timings["local"] = time.time() - t0
+        hmap = generate_map(width, height, subgrid, local_size, seed=seed_int,
+                            observer=relay, step_delay=delay,
+                            cancel=broker.cancelled, strict=False)
         broker.emit({
             "type": "run_complete",
             "elapsed": time.time() - start_t,
-            "timings": timings,
-            "regions": regions,
-            "blocks": blocks,
-            "tilemap": tilemap,
+            "timings": hmap.timings,
+            "regions": hmap.regions,
+            "blocks": hmap.blocks,
+            "tilemap": hmap.tilemap,
+            "seed": hmap.seed,
+            "valid": hmap.valid,
+            "issues": hmap.issues,
         })
-
+    except GenerationCancelled:
+        pass
     except Exception as e:  # pragma: no cover - surfaced to the UI
         logging.getLogger("hamc.gen").exception("Generation failed: %s", e)
         broker.emit({"type": "run_error", "error": f"{type(e).__name__}: {e}"})
     finally:
-        random.setstate(_prev_random_state)
-        np.random.set_state(_prev_np_state)
         _run_gate.release()
         broker.close()
-
-
-def _block_neighbours(I: IntermediateGenerator, r: int, c: int) -> Dict[str, str]:
-    h, w = len(I.cells), len(I.cells[0])
-    out: Dict[str, str] = {}
-    def _val(rr: int, cc: int) -> Optional[str]:
-        return I.cells[rr][cc].collapsed_value
-    if r > 0 and (v := _val(r - 1, c)):
-        out["top"] = v
-    if r < h - 1 and (v := _val(r + 1, c)):
-        out["bottom"] = v
-    if c > 0 and (v := _val(r, c - 1)):
-        out["left"] = v
-    if c < w - 1 and (v := _val(r, c + 1)):
-        out["right"] = v
-    return out
 
 
 class Handler(BaseHTTPRequestHandler):
@@ -431,9 +319,50 @@ class Handler(BaseHTTPRequestHandler):
             return self._serve_json({"ok": True})
         if path == "/api/stream":
             return self._serve_stream(parse_qs(parsed.query))
+        if path == "/api/render":
+            return self._serve_render({k: v[0] for k, v in parse_qs(parsed.query).items()})
         self.send_error(404, f"Not found: {parsed.path}")
 
-    def _serve_json(self, payload: Dict[str, Any]) -> None:
+    def _serve_render(self, params: dict[str, str]) -> None:
+        """PNG of the map for these params; the seed is required so the image
+        matches the run the client just watched."""
+        try:
+            seed = int(params["seed"])
+        except (KeyError, ValueError):
+            self.send_error(400, "seed is required")
+            return
+        style = params.get("style", "topdown")
+        if style not in ("topdown", "iso"):
+            self.send_error(400, "style must be topdown or iso")
+            return
+        width = _clip("width", params.get("width"), 4)
+        height = _clip("height", params.get("height"), 3)
+        subgrid = _clip("subgrid", params.get("subgrid"), 2)
+        local = _clip("local", params.get("local"), 4)
+        if (width * subgrid * local) * (height * subgrid * local) > MAX_TOTAL_CELLS:
+            self.send_error(400, "map exceeds the tile budget")
+            return
+        if not _run_gate.acquire(blocking=False):
+            self.send_error(503, "server busy")
+            return
+        try:
+            hmap = generate_map(width, height, subgrid, local, seed=seed, strict=False)
+            buf = io.BytesIO()
+            render_map(hmap, style=style, tile_size=12).save(buf, format="PNG")
+        except ValueError as e:
+            self.send_error(400, str(e))
+            return
+        finally:
+            _run_gate.release()
+        body = buf.getvalue()
+        self.send_response(200)
+        self.send_header("Content-Type", "image/png")
+        self.send_header("Content-Length", str(len(body)))
+        self.send_header("Cache-Control", "no-store")
+        self.end_headers()
+        self.wfile.write(body)
+
+    def _serve_json(self, payload: dict[str, Any]) -> None:
         body = json.dumps(payload).encode("utf-8")
         self.send_response(200)
         self.send_header("Content-Type", "application/json")
@@ -458,7 +387,7 @@ class Handler(BaseHTTPRequestHandler):
         self.end_headers()
         self.wfile.write(body)
 
-    def _serve_stream(self, qs: Dict[str, list]) -> None:
+    def _serve_stream(self, qs: dict[str, list]) -> None:
         params = {k: v[0] for k, v in qs.items()}
         broker = EventBroker()
         thread = threading.Thread(
@@ -500,33 +429,22 @@ class Handler(BaseHTTPRequestHandler):
             broker.close()
 
 
-def parse_args(argv: list[str]) -> argparse.Namespace:
-    p = argparse.ArgumentParser(description="HAMC live dashboard")
-    p.add_argument("--host", default="127.0.0.1")
-    p.add_argument("--port", type=int, default=8765)
-    p.add_argument("--open", action="store_true", help="open browser on start")
-    return p.parse_args(argv)
-
-
-def main(argv: Optional[list[str]] = None) -> int:
-    args = parse_args(argv or sys.argv[1:])
+def serve(host: str = "127.0.0.1", port: int = 8765, open_browser: bool = False) -> int:
+    """Run the dashboard until interrupted."""
     logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(message)s")
-
-    if args.host not in ("127.0.0.1", "localhost", "::1"):
+    if host not in ("127.0.0.1", "localhost", "::1"):
         logging.warning(
             "Binding to %s exposes the generator beyond loopback. Anyone who can "
             "reach this host can trigger generations (CPU/memory cost). Prefer "
             "--host 127.0.0.1 unless you intend LAN access.",
-            args.host,
+            host,
         )
 
-    server = ThreadingHTTPServer((args.host, args.port), Handler)
-    url = f"http://{args.host}:{args.port}"
+    server = ThreadingHTTPServer((host, port), Handler)
+    url = f"http://{host}:{port}"
     logging.info("HAMC dashboard listening on %s", url)
-    logging.info("  UI:     %s/", url)
     logging.info("  Stream: %s/api/stream?width=4&height=3&subgrid=2&local=4", url)
-    logging.info("  Health: %s/api/health", url)
-    if args.open:
+    if open_browser:
         threading.Timer(0.3, lambda: webbrowser.open(url)).start()
     try:
         server.serve_forever()
@@ -535,6 +453,15 @@ def main(argv: Optional[list[str]] = None) -> int:
     finally:
         server.server_close()
     return 0
+
+
+def main(argv: list[str] | None = None) -> int:
+    p = argparse.ArgumentParser(description="HAMC live dashboard")
+    p.add_argument("--host", default="127.0.0.1")
+    p.add_argument("--port", type=int, default=8765)
+    p.add_argument("--open", action="store_true", help="open browser on start")
+    args = p.parse_args(argv)
+    return serve(args.host, args.port, args.open)
 
 
 if __name__ == "__main__":
