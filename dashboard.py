@@ -17,7 +17,6 @@ import json
 import logging
 import os
 import queue
-import random
 import sys
 import threading
 import time
@@ -25,8 +24,6 @@ import webbrowser
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from typing import Any, Dict, List, Optional
 from urllib.parse import parse_qs, urlparse
-
-import numpy as np
 
 from hamc.config.tile_config import TileConfig
 from hamc.pipeline import GenerationCancelled, generate_map
@@ -189,12 +186,6 @@ def _run_generation(params: Dict[str, Any], broker: EventBroker) -> None:
         broker.close()
         return
 
-    # Save module-level RNG state so we can restore it after this run.
-    # Without this, two concurrent SSE streams using ThreadingHTTPServer
-    # would corrupt each other's random state (M-7 in the audit).
-    _prev_random_state = random.getstate()
-    _prev_np_state = np.random.get_state()
-
     try:
         seed_int: Optional[int] = int(seed) if seed not in (None, "") else None
     except (TypeError, ValueError):
@@ -234,6 +225,7 @@ def _run_generation(params: Dict[str, Any], broker: EventBroker) -> None:
             "regions": hmap.regions,
             "blocks": hmap.blocks,
             "tilemap": hmap.tilemap,
+            "seed": hmap.seed,
             "valid": hmap.valid,
             "issues": hmap.issues,
         })
@@ -243,8 +235,6 @@ def _run_generation(params: Dict[str, Any], broker: EventBroker) -> None:
         logging.getLogger("hamc.gen").exception("Generation failed: %s", e)
         broker.emit({"type": "run_error", "error": f"{type(e).__name__}: {e}"})
     finally:
-        random.setstate(_prev_random_state)
-        np.random.set_state(_prev_np_state)
         _run_gate.release()
         broker.close()
 

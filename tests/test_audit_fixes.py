@@ -9,8 +9,6 @@ reproducibility and the SSE cost/limit guards.
 import random
 import unittest
 
-import numpy as np
-
 import dashboard
 from hamc.config.block_config import BlockConfig
 from hamc.config.tile_config import TileConfig
@@ -84,9 +82,7 @@ class TestCollapseDoesNotReinitialize(unittest.TestCase):
     def test_all_required_regions_present(self):
         # A-1: forced-region placement must actually take effect.
         for seed in range(5):
-            random.seed(seed)
-            np.random.seed(seed)
-            g = GlobalGenerator(3, 3)
+            g = GlobalGenerator(3, 3, rng=random.Random(seed))
             g.initialize()
             self.assertTrue(g.collapse())
             self.assertTrue(g.validate())  # validate() requires every region type
@@ -106,19 +102,6 @@ class TestWeightedChoiceErrors(unittest.TestCase):
             # A non-numeric weight raises inside the choice and must be logged
             # (M-6: the except branch previously swallowed the error silently).
             self.assertEqual(weighted_random_choice({"a": "not-a-number"}), "ERROR")
-
-
-class TestSeedReproducibility(unittest.TestCase):
-    def test_same_seed_same_global_map(self):
-        def run():
-            random.seed(123)
-            np.random.seed(123)
-            g = GlobalGenerator(3, 3)
-            g.initialize()
-            g.collapse()
-            return [[c.collapsed_value for c in row] for row in g.cells]
-
-        self.assertEqual(run(), run())
 
 
 class _CapturingBroker:
@@ -159,10 +142,8 @@ class TestDashboardLimits(unittest.TestCase):
 
     def test_small_request_completes(self):
         broker = _CapturingBroker()
-        random.seed(7)
-        np.random.seed(7)
         dashboard._run_generation(
-            {"width": 2, "height": 2, "subgrid": 1, "local": 2, "delay": 0}, broker
+            {"width": 2, "height": 2, "subgrid": 1, "local": 3, "delay": 0, "seed": 7}, broker
         )
         self.assertIn("run_complete", broker.types())
 

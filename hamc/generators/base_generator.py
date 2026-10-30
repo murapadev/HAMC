@@ -28,7 +28,8 @@ class BaseGenerator(ABC):
     #: Upper bound on rollbacks per collapse() call; ``None`` scales with the grid.
     max_backtracks: Optional[int] = None
 
-    def __init__(self, width: int, height: int, name: str):
+    def __init__(self, width: int, height: int, name: str,
+                 rng: Optional[random.Random] = None):
         self.width = width
         self.height = height
         self.cells: List[List[Cell]] = []
@@ -36,6 +37,9 @@ class BaseGenerator(ABC):
         self.logger = logging.getLogger(name)
         self.name = name
         self.backtracks = 0
+        # Every random draw goes through this instance, so a seeded Random
+        # reproduces a run exactly and concurrent runs don't interfere.
+        self.rng = rng or random.Random()
         self._observer: Optional[Observer] = None
         self.step_delay: float = 0.0
 
@@ -128,7 +132,8 @@ class BaseGenerator(ABC):
             before = self._counts() if self._observer else None
 
             self.state.increment_stat("collapses")
-            value = self.cells[r][c].collapse(context={"neighbor_values": self._neighbour_values(r, c)})
+            value = self.cells[r][c].collapse(context={"neighbor_values": self._neighbour_values(r, c)},
+                                              rng=self.rng)
             if value != "ERROR" and self.propagate(r, c):
                 decisions.append((snapshot, (r, c), value))
                 self.state.update_entropy(entropy)
@@ -201,7 +206,7 @@ class BaseGenerator(ABC):
         if not contenders:
             return None
         adjacent = [pos for pos in contenders if self._has_collapsed_neighbor(*pos)]
-        return random.choice(adjacent or contenders)
+        return self.rng.choice(adjacent or contenders)
 
     def _has_collapsed_neighbor(self, r: int, c: int) -> bool:
         return any(self.cells[nr][nc].collapsed_value is not None

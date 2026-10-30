@@ -8,8 +8,6 @@ import time
 from dataclasses import asdict, dataclass, field
 from typing import Any, Callable, Dict, List, Optional
 
-import numpy as np
-
 from .generators.global_generator import GlobalGenerator
 from .generators.intermediate_generator import IntermediateGenerator
 from .generators.local_generator import LocalGenerator
@@ -97,6 +95,9 @@ def generate_map(
     tiles, so the tilemap is ``height*subgrid*local`` rows by
     ``width*subgrid*local`` columns.
 
+    ``seed`` makes the run reproducible; when omitted a random seed is drawn
+    and stored in ``HAMCMap.seed``.
+
     ``observer`` receives every generator event tagged with its ``level``
     (``global``, ``intermediate`` or ``local``) plus the pipeline events
     ``local_init``, ``local_block_start`` and ``local_block_complete``.
@@ -112,12 +113,15 @@ def generate_map(
         if cancel is not None and cancel():
             raise GenerationCancelled("generation cancelled")
 
-    if seed is not None:
-        random.seed(seed)
-        np.random.seed(seed)
+    # One private Random per run: the same seed gives the same map, and runs
+    # in other threads don't touch this state. Without a seed one is drawn
+    # and recorded in the result so the map can be reproduced later.
+    if seed is None:
+        seed = random.SystemRandom().randrange(2**32)
+    rng = random.Random(seed)
 
     t0 = time.perf_counter()
-    G = GlobalGenerator(width, height)
+    G = GlobalGenerator(width, height, rng=rng)
     G.set_observer(_tagged(observer, level="global"), step_delay=step_delay)
     G.initialize()
     if not G.collapse():
@@ -127,7 +131,7 @@ def generate_map(
     check_cancel()
 
     t0 = time.perf_counter()
-    I = IntermediateGenerator(G, subgrid_size=subgrid)
+    I = IntermediateGenerator(G, subgrid_size=subgrid, rng=rng)
     I.set_observer(_tagged(observer, level="intermediate"), step_delay=step_delay * 0.6)
     if not I.collapse():
         issues.append("intermediate layer failed validation")
@@ -149,7 +153,7 @@ def generate_map(
             btype = blocks[br][bc]
             base = [br * local, bc * local]
             relay = _tagged(observer, level="local", br=br, bc=bc, base=base)
-            LG = LocalGenerator(btype, local, block_neighbors(blocks, br, bc))
+            LG = LocalGenerator(btype, local, block_neighbors(blocks, br, bc), rng=rng)
             if relay:
                 # Re-announce the block on every attempt so a live view can
                 # reset it when a failed attempt is discarded.

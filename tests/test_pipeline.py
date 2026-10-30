@@ -51,7 +51,7 @@ class TestPipeline(unittest.TestCase):
                                         f"seed={seed} block=({br},{bc}) {hmap.blocks[br][bc]}")
 
     def test_invalid_block_is_reported_not_hidden(self):
-        with mock.patch.object(PathValidator, "validate_building", return_value=False), \
+        with mock.patch.object(LocalGenerator, "validate_paths", return_value=False), \
                 mock.patch.object(LocalGenerator, "attempts", 2):
             with self.assertRaises(GenerationError):
                 generate_map(2, 2, 2, 4, seed=1)

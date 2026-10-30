@@ -1,7 +1,8 @@
 from typing import Dict, Optional, Set, List, Tuple, Any
-from ..core.entropy import shannon_entropy, weighted_random_choice, normalized_weights
+import random
+
+from ..core.entropy import shannon_entropy, weighted_random_choice
 import logging
-import numpy as np
 import copy
 import time
 
@@ -77,13 +78,15 @@ class Cell:
     def collapse(self, 
                 avoid_values: Optional[Set[str]] = None, 
                 temperature: float = 1.0,
-                context: Optional[Dict[str, Any]] = None) -> str:
+                context: Optional[Dict[str, Any]] = None,
+                rng: Optional[random.Random] = None) -> str:
         """Collapse the cell to a single value based on weighted probabilities.
         
         Args:
             avoid_values: Set of values to avoid when collapsing
             temperature: Temperature parameter for exploration control
             context: Additional context information for smarter collapse
+            rng: Random source; defaults to the ``random`` module
             
         Returns:
             str: The selected value or "ERROR" if collapse fails
@@ -106,7 +109,7 @@ class Cell:
                 options = self._adjust_for_neighbors(options, context['neighbor_values'])
             
             # Select value using temperature-controlled random choice
-            self.collapsed_value = weighted_random_choice(options, temperature, avoid_values)
+            self.collapsed_value = weighted_random_choice(options, temperature, avoid_values, rng=rng)
             
             if self.collapsed_value == "ERROR":
                 self.logger.error("Weighted random choice failed")

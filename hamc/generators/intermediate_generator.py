@@ -1,3 +1,4 @@
+import random
 from typing import Dict, Optional, Set
 
 from ..config.block_config import BlockConfig
@@ -20,11 +21,12 @@ class IntermediateGenerator(BaseGenerator):
 
     attempts = 5
 
-    def __init__(self, global_gen: GlobalGenerator, subgrid_size: int = 3):
+    def __init__(self, global_gen: GlobalGenerator, subgrid_size: int = 3,
+                 rng: Optional[random.Random] = None):
         self.subgrid_size = subgrid_size
         self.global_gen = global_gen
         super().__init__(global_gen.width * subgrid_size, global_gen.height * subgrid_size,
-                         name="IntermediateGenerator")
+                         name="IntermediateGenerator", rng=rng or global_gen.rng)
         self.initialize()
 
     def compatibility(self) -> Dict[str, Set[str]]:

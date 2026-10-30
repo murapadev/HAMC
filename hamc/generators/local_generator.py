@@ -1,3 +1,4 @@
+import random
 from typing import Dict, Optional, Set
 
 from ..config.advanced_config import get_generator_config
@@ -22,8 +23,9 @@ class LocalGenerator(BaseGenerator):
     SPECIAL_BLOCK_TYPES = {"river", "road", "oasis", *BUILDING_TYPES}
     attempts = 25
 
-    def __init__(self, block_type: str, size: int, neighbors: Optional[Dict[str, str]] = None):
-        super().__init__(size, size, name=f"LocalGenerator_{block_type}")
+    def __init__(self, block_type: str, size: int, neighbors: Optional[Dict[str, str]] = None,
+                 rng: Optional[random.Random] = None):
+        super().__init__(size, size, name=f"LocalGenerator_{block_type}", rng=rng)
         self.block_type = block_type
         self.neighbors = neighbors or {}
         self.validator = PathValidator()
@@ -54,7 +56,7 @@ class LocalGenerator(BaseGenerator):
             # small block; the second half of the attempts go without it.
             if self.attempts_used <= self.attempts // 2:
                 self._apply_border_constraints()
-            self.cells[self.height // 2][self.width // 2].collapse()
+            self.cells[self.height // 2][self.width // 2].collapse(rng=self.rng)
 
         self._allowed = {t for row in self.cells for cell in row for t in cell.possible}
         return True

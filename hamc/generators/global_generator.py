@@ -1,5 +1,5 @@
 import random
-from typing import Dict, Set
+from typing import Dict, Optional, Set
 
 from ..config.region_config import RegionConfig
 from ..core.cell import Cell
@@ -16,8 +16,8 @@ class GlobalGenerator(BaseGenerator):
 
     attempts = 5
 
-    def __init__(self, width: int, height: int):
-        super().__init__(width, height, name="GlobalGenerator")
+    def __init__(self, width: int, height: int, rng: Optional[random.Random] = None):
+        super().__init__(width, height, name="GlobalGenerator", rng=rng)
 
     def compatibility(self) -> Dict[str, Set[str]]:
         return {name: set(cfg["can_adjacent"]) for name, cfg in RegionConfig.TYPES.items()}
@@ -42,7 +42,7 @@ class GlobalGenerator(BaseGenerator):
         self.logger.warning("Seeding missing regions after %d attempts: %s", self.attempts, missing)
         self._reset(seeded)
         free = [(r, c) for r in range(self.height) for c in range(self.width) if (r, c) not in seeded]
-        random.shuffle(free)
+        self.rng.shuffle(free)
         for region, (r, c) in zip(sorted(RegionConfig.TYPES), free):
             if region not in seeded.values():
                 self.cells[r][c].possible = {region: 1.0}
