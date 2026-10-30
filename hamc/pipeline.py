@@ -13,6 +13,9 @@ from .generators.intermediate_generator import IntermediateGenerator
 from .generators.local_generator import LocalGenerator
 
 Grid = List[List[str]]
+
+#: Smallest block side that can hold every block layout (see LocalGenerator).
+MIN_LOCAL = 3
 Observer = Callable[[Dict[str, Any]], None]
 
 
@@ -106,6 +109,12 @@ def generate_map(
     raises :class:`GenerationError`; otherwise the map is returned with
     ``valid=False`` and the problems listed in ``issues``.
     """
+    if subgrid < 1:
+        raise ValueError(f"subgrid must be >= 1 (got {subgrid})")
+    if local < MIN_LOCAL:
+        raise ValueError(
+            f"local must be >= {MIN_LOCAL} (got {local}): a building block needs a roof row, "
+            "a facade row and a ground floor with a door")
     issues: List[str] = []
     timings: Dict[str, float] = {}
 

@@ -60,5 +60,20 @@ class TestPipeline(unittest.TestCase):
         self.assertTrue(any("invalid after 2 attempts" in issue for issue in hmap.issues))
 
 
+class TestTinyGrids(unittest.TestCase):
+    def test_region_grid_too_small_for_every_region(self):
+        with self.assertRaisesRegex(ValueError, "needs all 3 region types"):
+            generate_map(2, 1, 2, 4, seed=1)
+
+    def test_block_too_small_for_buildings(self):
+        with self.assertRaisesRegex(ValueError, "local must be >= 3"):
+            generate_map(3, 1, 1, 2, seed=1)
+
+    def test_smallest_valid_map_has_every_region(self):
+        for seed in range(5):
+            hmap = generate_map(3, 1, 1, 3, seed=seed)
+            self.assertEqual(sorted(r for row in hmap.regions for r in row), ["city", "desert", "forest"])
+
+
 if __name__ == "__main__":
     unittest.main()

@@ -135,7 +135,7 @@ PARAM_LIMITS = {
     "width":   (1, 8),
     "height":  (1, 8),
     "subgrid": (1, 4),
-    "local":   (2, 8),
+    "local":   (3, 8),
 }
 
 

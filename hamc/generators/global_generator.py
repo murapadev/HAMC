@@ -17,6 +17,12 @@ class GlobalGenerator(BaseGenerator):
     attempts = 5
 
     def __init__(self, width: int, height: int, rng: Optional[random.Random] = None):
+        required = len(RegionConfig.TYPES)
+        if width < 1 or height < 1 or width * height < required:
+            raise ValueError(
+                f"a {width}x{height} region grid has {max(0, width * height)} cell(s), but every map "
+                f"needs all {required} region types ({', '.join(RegionConfig.TYPES)}); "
+                f"use at least {required} cells, e.g. width={required} height=1")
         super().__init__(width, height, name="GlobalGenerator", rng=rng)
 
     def compatibility(self) -> Dict[str, Set[str]]:
